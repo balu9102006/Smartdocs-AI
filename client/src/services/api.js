@@ -163,6 +163,13 @@ export const api = {
   },
 
   async deleteDocument(id) {
+    // The local mirror can hold a stale copy of any document (synced on
+    // upload for instant display), so it must be pruned on every delete
+    // path - otherwise a deleted document keeps surfacing via the
+    // by-id fallback below once the real backend correctly 404s it.
+    const docs = getStoredDocuments().filter(d => d.id !== id);
+    saveStoredDocuments(docs);
+
     try {
       const res = await fetch(`${API_BASE_URL}/documents/${id}`, {
         method: 'DELETE',
@@ -175,9 +182,6 @@ export const api = {
       console.warn('[API] Delete request fell back to local storage:', err);
     }
 
-    // Fallback for local/mock documents that only exist in localStorage
-    const docs = getStoredDocuments().filter(d => d.id !== id);
-    saveStoredDocuments(docs);
     return { success: true };
   },
 
