@@ -74,7 +74,7 @@ export const api = {
       });
       if (res.ok) {
         const backendDocs = await res.json();
-        if (backendDocs && backendDocs.length > 0) return backendDocs.map(normalizeDocument);
+        if (Array.isArray(backendDocs)) return backendDocs.map(normalizeDocument);
       }
     } catch {
       // Fallback to local storage
