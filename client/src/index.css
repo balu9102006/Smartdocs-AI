@@ -1,0 +1,98 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply text-parchment font-body antialiased min-h-screen selection:bg-brass/30 selection:text-parchment;
+  }
+
+  /* Ink ground ruled like ledger paper — the lines read as faint, never as stripes. */
+  .ledger-ground {
+    background-color: #14151b;
+    background-image: repeating-linear-gradient(
+      180deg,
+      rgba(233, 228, 211, 0.045) 0px,
+      rgba(233, 228, 211, 0.045) 1px,
+      transparent 1px,
+      transparent 34px
+    );
+  }
+
+  /* Printed headings: serif, tight, with the display face's optical sizing. */
+  h1, h2, h3, h4 {
+    @apply font-display;
+    font-optical-sizing: auto;
+  }
+}
+
+@layer components {
+  /* A sheet of paper laid on the ink desk. */
+  .sheet {
+    @apply bg-paper text-ink-text border border-ink/15 rounded-md shadow-sheet;
+  }
+
+  /* An inset well printed onto a sheet — quotes, answers, secondary rows. */
+  .sheet-well {
+    @apply bg-ink/5 border border-ink/10 rounded;
+  }
+
+  /* Brass hardware: the one control that commits an action. */
+  .btn-brass {
+    @apply bg-brass text-ink font-semibold rounded border border-brass-dim
+           hover:bg-brass-light transition-colors
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* A quiet control on an ink surface. */
+  .btn-ink {
+    @apply bg-ink-soft text-parchment border border-ink-line rounded
+           hover:border-brass/50 hover:text-brass-light transition-colors;
+  }
+
+  /* Catalog tab — page citations, chunk ids, status. */
+  .tab-brass {
+    @apply font-mono text-[10px] font-medium px-2 py-0.5 rounded-sm bg-brass text-ink;
+  }
+
+  .tab-sage {
+    @apply font-mono text-[10px] font-semibold px-2 py-0.5 rounded-sm bg-sage text-paper;
+  }
+
+  /* Uppercase index label — the small caps on a catalog card. */
+  .index-label {
+    @apply font-mono text-[10px] uppercase tracking-[0.14em];
+  }
+
+  .field-paper {
+    @apply w-full bg-paper-sunk border border-ink/20 rounded px-3 py-2
+           text-ink-text placeholder-ink-text/40 font-body
+           focus:border-brass focus:ring-1 focus:ring-brass outline-none transition-colors;
+  }
+}
+
+/* Scrollbar: brass thread on ink. */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(171, 125, 52, 0.35);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(171, 125, 52, 0.6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
