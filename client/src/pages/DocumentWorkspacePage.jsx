@@ -29,6 +29,7 @@ export default function DocumentWorkspacePage() {
 
   const [activeTab, setActiveTab] = useState(initialTab);
   const [doc, setDoc] = useState(null);
+  const [notFound, setNotFound] = useState(false);
   const [messages, setMessages] = useState([]);
   const [inputQuery, setInputQuery] = useState('');
   const [isAiThinking, setIsAiThinking] = useState(false);
@@ -74,6 +75,8 @@ export default function DocumentWorkspacePage() {
     if (documentData) {
       setDoc(documentData);
       setMessages(documentData.initialMessages || []);
+    } else {
+      setNotFound(true);
     }
   };
 
@@ -226,6 +229,21 @@ The document specifies that the underlying system integrates isolated components
       [qId]: optionIdx
     }));
   };
+
+  if (notFound) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-20 text-center">
+        <FileText className="w-8 h-8 mx-auto mb-3 text-parchment-dim" />
+        <p className="text-sm text-parchment-dim mb-4">
+          This document no longer exists, or you don't have access to it.
+        </p>
+        <Link to="/dashboard" className="btn-brass px-4 py-2 text-sm inline-flex items-center gap-2">
+          <ArrowLeft className="w-4 h-4" />
+          <span>Back to the Stacks</span>
+        </Link>
+      </div>
+    );
+  }
 
   if (!doc) {
     return (
