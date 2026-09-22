@@ -260,7 +260,14 @@ export default function DocumentWorkspacePage() {
     // Open the tab synchronously, inside the click handler — opening it
     // only after the `await` below loses the user-gesture context and gets
     // silently popup-blocked in real browsers.
-    const newTab = window.open('', '_blank', 'noopener,noreferrer');
+    //
+    // Deliberately no 'noopener' here: that flag severs this window's
+    // ability to control the tab it just opened, which breaks the
+    // `newTab.location.href = url` navigation below (confirmed live — the
+    // tab opened but stayed stuck on about:blank). We're navigating it to
+    // our own backend-issued signed URL, not attacker-controlled content,
+    // so the isolation noopener provides isn't needed here.
+    const newTab = window.open('', '_blank');
 
     try {
       const url = await api.getFileUrl(doc.id);
