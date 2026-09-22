@@ -1,5 +1,11 @@
 import mammoth from 'mammoth';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { createCanvas } from '@napi-rs/canvas';
+import { ocrService } from './ocrService.js';
+
+// A page with fewer words than this is treated as scanned/handwritten
+// (no usable text layer) and sent through OCR instead.
+const MIN_WORDS_PER_PAGE = 12;
 
 /**
  * Cleans and normalizes extracted text.
@@ -27,19 +33,56 @@ export async function extractTextFromPdf(buffer) {
     }).promise;
 
     let rawText = '';
+    let ocrPageCount = 0;
+
     for (let i = 1; i <= doc.numPages; i++) {
       const page = await doc.getPage(i);
       const content = await page.getTextContent();
-      rawText += content.items.map((item) => item.str).join(' ') + '\n';
+      let pageText = content.items.map((item) => item.str).join(' ');
+
+      const wordCount = pageText.trim().split(/\s+/).filter(Boolean).length;
+      if (wordCount < MIN_WORDS_PER_PAGE) {
+        // Likely a scanned or handwritten page with no usable text layer —
+        // render it to an image and transcribe it with a vision model.
+        const ocrText = await ocrPage(page);
+        if (ocrText) {
+          pageText = ocrText;
+          ocrPageCount++;
+        }
+      }
+
+      rawText += pageText + '\n';
+    }
+
+    if (ocrPageCount > 0) {
+      console.log(`[Parser] OCR transcribed ${ocrPageCount}/${doc.numPages} page(s) with no text layer.`);
     }
 
     return {
       text: cleanText(rawText),
-      totalPages: doc.numPages
+      totalPages: doc.numPages,
+      ocrPageCount
     };
   } catch (err) {
     console.error('PDF parsing error:', err);
     throw new Error(`Failed to parse PDF document: ${err.message}`);
+  }
+}
+
+/**
+ * Renders a PDF page to a PNG image and transcribes it via the OCR service.
+ */
+async function ocrPage(page) {
+  try {
+    const viewport = page.getViewport({ scale: 2.0 });
+    const canvas = createCanvas(viewport.width, viewport.height);
+    const context = canvas.getContext('2d');
+    await page.render({ canvasContext: context, viewport }).promise;
+    const imageBuffer = canvas.toBuffer('image/png');
+    return await ocrService.transcribeImage(imageBuffer, 'image/png');
+  } catch (err) {
+    console.warn('[Parser] OCR page render failed:', err.message);
+    return '';
   }
 }
 

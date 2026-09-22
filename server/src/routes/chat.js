@@ -104,6 +104,7 @@ router.post('/ask', requireAuth, async (req, res, next) => {
     res.json({
       answer: aiResult.answer,
       sources: aiResult.sources,
+      grounded: aiResult.grounded !== false,
       sessionId: activeSessionId,
       model: aiResult.model
     });

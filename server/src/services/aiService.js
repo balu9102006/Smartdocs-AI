@@ -17,6 +17,18 @@ export const aiService = {
   async generateAnswer({ question, relevantChunks, documentName }) {
     console.log(`[AIService] Generating answer for question: "${question}" using ${relevantChunks.length} chunks`);
 
+    // No chunks cleared the similarity threshold — the question falls outside
+    // this document. Answer deterministically instead of trusting the LLM to
+    // comply with the "insufficient info" instruction every time.
+    if (!relevantChunks || relevantChunks.length === 0) {
+      return {
+        answer: `**${documentName}** doesn't contain information to answer that question. Try rephrasing, or ask something covered by the uploaded document.`,
+        model: 'smartdocs-system',
+        grounded: false,
+        sources: []
+      };
+    }
+
     // Build context snippet with explicit page citations
     const contextBlock = relevantChunks.length > 0
       ? relevantChunks.map((c, i) => `[EXCERPT ${i + 1} - Page ${c.page}]:\n${c.text}`).join('\n\n')
@@ -53,10 +65,15 @@ Provide a helpful, direct, and factually grounded answer with citations:`;
         });
 
         const answerText = completion.choices[0]?.message?.content || 'Unable to generate response.';
+        const isRefusal = isInsufficientInfoRefusal(answerText);
         return {
           answer: answerText,
           model: config.groq.defaultModel,
-          sources: relevantChunks.map(c => ({
+          grounded: !isRefusal,
+          // Retrieved chunks scraped past the similarity threshold but the
+          // model itself judged them irrelevant — don't attach them as if
+          // they backed a real answer.
+          sources: isRefusal ? [] : relevantChunks.map(c => ({
             chunkId: c.chunkId,
             page: c.page,
             text: c.text.substring(0, 140) + '...'
@@ -72,6 +89,7 @@ Provide a helpful, direct, and factually grounded answer with citations:`;
     return {
       answer: fallbackAnswer,
       model: 'qwen-2.5-simulation',
+      grounded: true,
       sources: relevantChunks.map(c => ({
         chunkId: c.chunkId,
         page: c.page,
@@ -80,6 +98,18 @@ Provide a helpful, direct, and factually grounded answer with citations:`;
     };
   }
 };
+
+/**
+ * Detects the model's own "insufficient info" refusal so the UI can flag the
+ * answer as ungrounded even when the similarity threshold still let a few
+ * (irrelevant) chunks through.
+ */
+function isInsufficientInfoRefusal(answerText) {
+  const normalized = answerText.toLowerCase();
+  return normalized.includes('does not contain enough information')
+    || normalized.includes("doesn't contain enough information")
+    || normalized.includes('does not contain information');
+}
 
 /**
  * Generates an intelligent context-derived answer locally when no cloud LLM key is configured.
