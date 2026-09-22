@@ -16,21 +16,26 @@ import {
   Info,
   ChevronRight,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  AlertTriangle
 } from 'lucide-react';
 import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import CreatorProfileCard from '../components/CreatorProfileCard';
 import Markdown from '../components/Markdown';
 
 export default function DocumentWorkspacePage() {
   const { id } = useParams();
+  const { signOut } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = searchParams.get('tab') || 'chat';
 
   const [activeTab, setActiveTab] = useState(initialTab);
   const [doc, setDoc] = useState(null);
   const [notFound, setNotFound] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [messages, setMessages] = useState([]);
+  const [sessionId, setSessionId] = useState(null);
   const [inputQuery, setInputQuery] = useState('');
   const [isAiThinking, setIsAiThinking] = useState(false);
   const [copiedSummary, setCopiedSummary] = useState(false);
@@ -73,12 +78,24 @@ export default function DocumentWorkspacePage() {
   }, [activeTab, doc, isGeneratingSummary, isExtractingPoints, isGeneratingQuiz]);
 
   const loadDocument = async () => {
-    const documentData = await api.getDocumentById(id);
-    if (documentData) {
-      setDoc(documentData);
-      setMessages(documentData.initialMessages || []);
-    } else {
-      setNotFound(true);
+    setNotFound(false);
+    setLoadError('');
+    try {
+      const documentData = await api.getDocumentById(id);
+      if (documentData) {
+        setDoc(documentData);
+        setMessages(documentData.initialMessages || []);
+      } else {
+        setNotFound(true);
+      }
+    } catch (err) {
+      if (err.status === 404) {
+        setNotFound(true);
+      } else if (err.status === 401) {
+        signOut();
+      } else {
+        setLoadError(err.message || 'Failed to load this document.');
+      }
     }
   };
 
@@ -105,71 +122,44 @@ export default function DocumentWorkspacePage() {
     setIsAiThinking(true);
 
     try {
-      // 1. Live backend RAG call
       const backendResult = await api.askQuestion({
         documentId: doc?.id,
-        question: queryText
+        question: queryText,
+        sessionId
       });
-
-      if (backendResult && backendResult.answer) {
-        const aiMessage = {
-          id: 'ai-' + Date.now(),
-          role: 'assistant',
-          content: backendResult.answer,
-          sources: backendResult.sources || [],
-          grounded: backendResult.grounded !== false,
-          profile: backendResult.profile || null,
-          createdAt: new Date().toISOString()
-        };
-        setMessages(prev => [...prev, aiMessage]);
-        setIsAiThinking(false);
-        return;
-      }
-    } catch (err) {
-      console.warn('Backend RAG call error:', err);
-    }
-
-    // 2. Client-side fallback generator if backend is temporarily disconnected
-    setTimeout(() => {
-      let aiResponseContent = '';
-      let sources = [];
-
-      const lowerQ = queryText.toLowerCase();
-
-      if (lowerQ.includes('summary') || lowerQ.includes('overview')) {
-        aiResponseContent = `Here is the grounded synthesis from **${doc?.fileName}**:\n\n${doc?.summary || 'The document presents key architectural paradigms, experimental evaluations, and structured methodology.'}`;
-        sources = [{ chunkId: 'c-101', page: 1, text: 'Executive overview and fundamental problem formulation.' }];
-      } else if (lowerQ.includes('transformer') || lowerQ.includes('attention')) {
-        aiResponseContent = `According to **Section 4.1 (Self-Attention Dynamics)**:
-Self-attention maps a query and a set of key-value pairs to an output, where the weights assigned to each value are computed by a compatibility function of the query with the corresponding key.
-
-$$\\text{Attention}(Q, K, V) = \\text{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V$$
-
-This allows each token to attend to all other positions simultaneously, bypassing sequential bottlenecks.`;
-        sources = [{ chunkId: 'c-112', page: 34, text: 'Attention calculation matrices Q, K, V across sequence length L.' }];
-      } else {
-        aiResponseContent = `Based on the retrieved context chunks from **${doc?.fileName}**:
-
-Regarding your query **"${queryText}"**:
-The document specifies that the underlying system integrates isolated components into an optimized workflow. Chunks are semantically ranked using vector similarity against your prompt to deliver contextually grounded conclusions.
-
-> **Key Rule**: Answers strictly prioritize verified document context without external fabrications.`;
-        sources = [
-          { chunkId: 'c-105', page: Math.floor(Math.random() * (doc?.totalPages || 10)) + 1, text: 'Relevant contextual passage retrieved via vector similarity match threshold > 0.78.' }
-        ];
-      }
 
       const aiMessage = {
         id: 'ai-' + Date.now(),
         role: 'assistant',
-        content: aiResponseContent,
-        sources: sources,
+        content: backendResult.answer,
+        sources: backendResult.sources || [],
+        grounded: backendResult.grounded !== false,
+        profile: backendResult.profile || null,
         createdAt: new Date().toISOString()
       };
-
       setMessages(prev => [...prev, aiMessage]);
+      if (backendResult.sessionId) {
+        setSessionId(backendResult.sessionId);
+      }
+    } catch (err) {
+      // A failed request must never be papered over with an invented
+      // answer — that's the opposite of what this app promises (cited,
+      // grounded answers only). Show the real failure instead.
+      if (err.status === 401) {
+        signOut();
+        return;
+      }
+      const errorMessage = {
+        id: 'err-' + Date.now(),
+        role: 'assistant',
+        isError: true,
+        content: err.message || 'Something went wrong. Please try again.',
+        createdAt: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
       setIsAiThinking(false);
-    }, 700);
+    }
   };
 
   const handleCopySummary = () => {
@@ -267,6 +257,19 @@ The document specifies that the underlying system integrates isolated components
           <ArrowLeft className="w-4 h-4" />
           <span>Back to the Stacks</span>
         </Link>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-20 text-center">
+        <FileText className="w-8 h-8 mx-auto mb-3 text-red-400/70" />
+        <p className="text-sm text-parchment-dim mb-4">{loadError}</p>
+        <button onClick={loadDocument} className="btn-brass px-4 py-2 text-sm inline-flex items-center gap-2">
+          <RefreshCw className="w-4 h-4" />
+          <span>Retry</span>
+        </button>
       </div>
     );
   }
@@ -384,6 +387,8 @@ The document specifies that the underlying system integrates isolated components
                       className={`max-w-2xl rounded-2xl p-4 text-xs sm:text-sm leading-relaxed shadow-md ${
                         msg.role === 'user'
                           ? 'bg-ink-text text-parchment rounded-tr-none'
+                          : msg.isError
+                          ? 'bg-red-50 border border-red-300 text-ink-text rounded-tl-none'
                           : msg.grounded === false
                           ? 'bg-amber-50 border border-amber-300 text-ink-text rounded-tl-none'
                           : 'sheet-well text-ink-text rounded-tl-none'
@@ -391,9 +396,16 @@ The document specifies that the underlying system integrates isolated components
                     >
                       {msg.role === 'assistant' && (
                         <div className={`flex items-center gap-2 mb-2 pb-2 border-b index-label ${
-                          msg.grounded === false ? 'border-amber-300 text-amber-700' : 'border-ink/15 text-brass-dim'
+                          msg.isError
+                            ? 'border-red-300 text-red-700'
+                            : msg.grounded === false ? 'border-amber-300 text-amber-700' : 'border-ink/15 text-brass-dim'
                         }`}>
-                          {msg.grounded === false ? (
+                          {msg.isError ? (
+                            <>
+                              <AlertTriangle className="w-3.5 h-3.5" />
+                              <span>Couldn't get an answer</span>
+                            </>
+                          ) : msg.grounded === false ? (
                             <>
                               <Info className="w-3.5 h-3.5" />
                               <span>Not found in this document</span>

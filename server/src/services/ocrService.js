@@ -10,6 +10,12 @@ const groq = isGroqConfigured
   ? new Groq({ apiKey: config.groq.apiKey })
   : null;
 
+// Only models confirmed to accept an image_url content part. If the
+// configured model isn't one of these, every OCR call will throw and the
+// page silently indexes as empty text with nothing telling anyone why —
+// warn loudly at call time instead of failing silently.
+const KNOWN_VISION_MODELS = new Set(['qwen/qwen3.8-27b', 'qwen/qwen3.6-27b']);
+
 const TRANSCRIBE_PROMPT = `Transcribe every word of text visible in this image, including handwritten notes, exactly as written.
 Rules:
 - Output ONLY the transcribed text, nothing else (no preamble, no commentary).
@@ -22,17 +28,28 @@ export const ocrService = {
   /**
    * Uses a Groq vision-capable model to transcribe text (including
    * handwriting) from a rendered page image.
+   *
+   * Returns { text, ok }. `ok: false` means the transcription attempt
+   * itself failed (misconfigured/non-vision model, API error, etc.) — the
+   * caller must treat that differently from "ok: true, text: ''" (a page
+   * that genuinely has no readable text), since silently treating a failed
+   * OCR call as an empty page loses the page's content with no signal.
    */
   async transcribeImage(imageBuffer, mimeType = 'image/png') {
     if (!isGroqConfigured || !groq) {
       console.warn('[OCRService] Groq not configured — skipping OCR for scanned/handwritten page.');
-      return '';
+      return { text: '', ok: false };
+    }
+
+    const model = config.groq.defaultModel || 'qwen/qwen3.8-27b';
+    if (!KNOWN_VISION_MODELS.has(model)) {
+      console.warn(`[OCRService] GROQ_MODEL="${model}" is not a confirmed vision-capable model — OCR calls will likely fail. Known-good: ${[...KNOWN_VISION_MODELS].join(', ')}`);
     }
 
     try {
       const base64Image = imageBuffer.toString('base64');
       const completion = await groq.chat.completions.create({
-        model: config.groq.defaultModel || 'qwen/qwen3.8-27b',
+        model,
         messages: [
           {
             role: 'user',
@@ -48,16 +65,16 @@ export const ocrService = {
 
       const raw = completion.choices[0]?.message?.content?.trim() || '';
       const exactDeduped = dedupeRepeatedTranscription(raw);
-      if (!exactDeduped) return exactDeduped;
+      if (!exactDeduped) return { text: exactDeduped, ok: true };
 
       // The vision pass sometimes repeats itself with a different (even
       // mid-word) line wrap that exact-match dedup can't catch. A second,
       // text-only cleanup pass catches that semantically — still the same
       // free-tier model, so this costs no money, only a little latency.
-      return await cleanupRepetition(exactDeduped);
+      return { text: await cleanupRepetition(exactDeduped), ok: true };
     } catch (err) {
       console.warn('[OCRService] Vision transcription failed:', err.message);
-      return '';
+      return { text: '', ok: false };
     }
   }
 };

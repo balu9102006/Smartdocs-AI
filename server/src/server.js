@@ -8,6 +8,7 @@ import documentsRouter from './routes/documents.js';
 import chatRouter from './routes/chat.js';
 import analysisRouter from './routes/analysis.js';
 import { requireAuth } from './middleware/auth.js';
+import { CREATOR_IMAGE_DIR } from './services/creatorService.js';
 
 // A missing/misconfigured Supabase env var silently drops auth into a dev
 // fallback mode that trusts a client-supplied x-user-id header — an
@@ -50,6 +51,11 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// The backend owns and serves this asset itself — no dependency on the
+// client package's directory being present in this container (it wasn't,
+// in the production Docker image; see creatorService.js).
+app.use('/creator', express.static(CREATOR_IMAGE_DIR));
 
 // Request logger
 app.use((req, res, next) => {

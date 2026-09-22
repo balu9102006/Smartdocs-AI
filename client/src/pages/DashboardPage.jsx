@@ -9,18 +9,24 @@ import {
   Sparkles,
   HelpCircle,
   Clock,
-  Plus
+  Plus,
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import DocumentCard from '../components/DocumentCard';
 import UploadModal from '../components/UploadModal';
 import { api, getStoredDocuments } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 export default function DashboardPage() {
+  const { signOut } = useAuth();
   const [documents, setDocuments] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [actionError, setActionError] = useState('');
 
   useEffect(() => {
     loadDocs();
@@ -28,20 +34,41 @@ export default function DashboardPage() {
 
   const loadDocs = async () => {
     setLoading(true);
-    const docs = await api.getDocuments();
-    setDocuments(docs);
-    setLoading(false);
+    setLoadError('');
+    try {
+      const docs = await api.getDocuments();
+      setDocuments(docs);
+    } catch (err) {
+      // A signed-in user must see a real error here, never a silent swap to
+      // fake demo documents presented as their own library.
+      setLoadError(err.message || 'Failed to load your documents.');
+      if (err.status === 401) signOut();
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleUploadSuccess = async (file) => {
-    await api.uploadDocument(file);
-    await loadDocs();
+    setActionError('');
+    try {
+      await api.uploadDocument(file);
+      await loadDocs();
+    } catch (err) {
+      setActionError(err.message || 'Upload failed. Please try again.');
+      if (err.status === 401) signOut();
+      throw err;
+    }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this document?')) {
+    if (!window.confirm('Are you sure you want to delete this document?')) return;
+    setActionError('');
+    try {
       await api.deleteDocument(id);
       await loadDocs();
+    } catch (err) {
+      setActionError(err.message || 'Delete failed. Please try again.');
+      if (err.status === 401) signOut();
     }
   };
 
@@ -140,8 +167,28 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {actionError && (
+        <div className="mb-4 p-3 rounded-md border border-red-800/50 bg-red-950/30 text-red-200 text-sm flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span>{actionError}</span>
+        </div>
+      )}
+
       {/* Shelves */}
-      {filteredDocs.length > 0 ? (
+      {loadError ? (
+        <div className="p-12 text-center border border-dashed border-red-800/50 rounded-md bg-red-950/20">
+          <AlertTriangle className="w-10 h-10 text-red-400/70 mx-auto mb-3" />
+          <h3 className="font-display text-base font-semibold text-parchment">Couldn't load your documents</h3>
+          <p className="text-sm text-parchment-dim mt-1.5 max-w-sm mx-auto">{loadError}</p>
+          <button
+            onClick={loadDocs}
+            className="btn-brass mt-5 px-4 py-2 text-xs inline-flex items-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Retry</span>
+          </button>
+        </div>
+      ) : filteredDocs.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredDocs.map((doc) => (
             <DocumentCard key={doc.id} doc={doc} onDelete={handleDelete} />

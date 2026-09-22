@@ -34,6 +34,7 @@ export async function extractTextFromPdf(buffer) {
 
     let rawText = '';
     let ocrPageCount = 0;
+    let ocrFailedPageCount = 0;
 
     for (let i = 1; i <= doc.numPages; i++) {
       const page = await doc.getPage(i);
@@ -44,10 +45,15 @@ export async function extractTextFromPdf(buffer) {
       if (wordCount < MIN_WORDS_PER_PAGE) {
         // Likely a scanned or handwritten page with no usable text layer —
         // render it to an image and transcribe it with a vision model.
-        const ocrText = await ocrPage(page);
-        if (ocrText) {
+        const { text: ocrText, ok } = await ocrPage(page);
+        if (ok) {
           pageText = ocrText;
           ocrPageCount++;
+        } else {
+          // The OCR call itself failed (not "page has no text") — this page
+          // is about to be indexed as empty, which silently loses its
+          // content. Count it so the caller can surface that.
+          ocrFailedPageCount++;
         }
       }
 
@@ -57,11 +63,15 @@ export async function extractTextFromPdf(buffer) {
     if (ocrPageCount > 0) {
       console.log(`[Parser] OCR transcribed ${ocrPageCount}/${doc.numPages} page(s) with no text layer.`);
     }
+    if (ocrFailedPageCount > 0) {
+      console.warn(`[Parser] OCR FAILED on ${ocrFailedPageCount}/${doc.numPages} page(s) — those pages will index as empty text.`);
+    }
 
     return {
       text: cleanText(rawText),
       totalPages: doc.numPages,
-      ocrPageCount
+      ocrPageCount,
+      ocrFailedPageCount
     };
   } catch (err) {
     console.error('PDF parsing error:', err);
@@ -82,7 +92,7 @@ async function ocrPage(page) {
     return await ocrService.transcribeImage(imageBuffer, 'image/png');
   } catch (err) {
     console.warn('[Parser] OCR page render failed:', err.message);
-    return '';
+    return { text: '', ok: false };
   }
 }
 

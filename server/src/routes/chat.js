@@ -1,4 +1,5 @@
 import express from 'express';
+import { randomUUID } from 'crypto';
 import { ragService } from '../services/ragService.js';
 import { aiService } from '../services/aiService.js';
 import { documentService } from '../services/documentService.js';
@@ -8,6 +9,7 @@ import { llmRateLimiter } from '../middleware/rateLimit.js';
 import { supabaseAdmin, isSupabaseConfigured } from '../config/supabase.js';
 
 const MAX_QUESTION_LENGTH = 2000;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const router = express.Router();
 
@@ -38,7 +40,7 @@ router.post('/ask', requireAuth, llmRateLimiter, async (req, res, next) => {
       const creator = buildCreatorResponse();
       return res.json({
         ...creator,
-        sessionId: sessionId || `sess-${Date.now()}`,
+        sessionId: sessionId && UUID_RE.test(sessionId) ? sessionId : randomUUID(),
         model: 'smartdocs-system'
       });
     }
@@ -64,13 +66,32 @@ router.post('/ask', requireAuth, llmRateLimiter, async (req, res, next) => {
     });
 
     // 4. Persist conversation
-    const activeSessionId = sessionId || `sess-${Date.now()}`;
+    // chat_messages.session_id is a uuid FK into chat_sessions — a client
+    // may pass back whatever this endpoint returned last time, but if it's
+    // not a real uuid (or is missing, e.g. the first message), mint a fresh
+    // one rather than writing a value the FK constraint will reject.
+    const activeSessionId = sessionId && UUID_RE.test(sessionId) ? sessionId : randomUUID();
     const localStoreKey = `${userId}:${activeSessionId}`;
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
-        // Save user question and assistant answer
-        await supabaseAdmin.from('chat_messages').insert([
+        // Ensure the parent chat_sessions row exists before inserting
+        // messages into it. ignoreDuplicates means an existing session
+        // (later messages in the same conversation) is left untouched
+        // rather than having its title overwritten every turn.
+        const { error: sessionError } = await supabaseAdmin
+          .from('chat_sessions')
+          .upsert(
+            { id: activeSessionId, user_id: userId, document_id: documentId, title: question.slice(0, 60) },
+            { onConflict: 'id', ignoreDuplicates: true }
+          );
+        if (sessionError) throw sessionError;
+
+        // Save user question and assistant answer. supabase-js resolves
+        // even on failure (it returns { error }, it doesn't throw) — the
+        // error must be checked explicitly or a failed write disappears
+        // silently, which is exactly how this was broken before.
+        const { error: messagesError } = await supabaseAdmin.from('chat_messages').insert([
           {
             session_id: activeSessionId,
             role: 'user',
@@ -83,6 +104,7 @@ router.post('/ask', requireAuth, llmRateLimiter, async (req, res, next) => {
             sources: aiResult.sources
           }
         ]);
+        if (messagesError) throw messagesError;
       } catch (dbErr) {
         console.warn('[ChatRouter] Could not persist message to Supabase:', dbErr.message);
       }
@@ -131,14 +153,11 @@ router.get('/messages/:sessionId', requireAuth, async (req, res, next) => {
     const { sessionId } = req.params;
     const userId = req.user?.id || 'user-default-1';
 
-    // chat_sessions.id is a uuid column; a malformed/non-uuid id (like the
-    // sess-<timestamp> ids /ask currently generates) can never match a row,
-    // so treat it the same as "not found" instead of letting the Postgres
-    // type error fall through to a 500.
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId);
-
+    // chat_sessions.id is a uuid column; a malformed/non-uuid id can never
+    // match a row, so treat it the same as "not found" instead of letting
+    // the Postgres type error fall through to a 500.
     if (isSupabaseConfigured && supabaseAdmin) {
-      if (!isUuid) {
+      if (!UUID_RE.test(sessionId)) {
         return res.status(404).json({ error: 'Chat session not found' });
       }
 

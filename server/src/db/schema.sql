@@ -1,6 +1,17 @@
 -- ==============================================================================
 -- SMARTDOCS AI - Complete Supabase Database Schema with pgvector & RLS
 -- ==============================================================================
+--
+-- MIGRATION NOTE (existing databases only): this file uses `create table if
+-- not exists`, so re-running it against a database that already has these
+-- tables will NOT add the new `embedding_source` column below. Run this
+-- once in the Supabase SQL editor to add it to an existing `documents`
+-- table:
+--
+--   alter table public.documents
+--     add column if not exists embedding_source text not null default 'gemini';
+--
+-- A fresh database created from this file already includes the column.
 
 -- 1. Enable pgvector extension for similarity search
 create extension if not exists vector;
@@ -17,6 +28,13 @@ create table if not exists public.documents (
   status text not null default 'uploaded', -- 'uploaded', 'processing', 'ready', 'error'
   error_message text,
   total_pages int default 0,
+  -- Which method embedded this document's chunks: 'gemini' (real semantic
+  -- embeddings) or 'hash-fallback' (the degraded word-hash vector used when
+  -- the embedding API is unavailable). A question must be embedded with the
+  -- SAME method before comparing it against this document's chunks —
+  -- comparing a real embedding against a hash vector (or vice versa)
+  -- produces a meaningless similarity score. See ragService.js.
+  embedding_source text not null default 'gemini',
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );

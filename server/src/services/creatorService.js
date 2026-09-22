@@ -7,14 +7,19 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const CREATOR_IMAGE_DIR = path.resolve(
+// Lives under server/src, so it's included by the Dockerfile's `COPY src
+// ./src` like any other source file — no dependency on the client package's
+// directory existing in this container. server.js serves this directory at
+// the /creator path (see app.use('/creator', express.static(...))), so the
+// backend both owns and serves this asset end to end.
+export const CREATOR_IMAGE_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  '../../../client/public/creator'
+  '../assets/creator'
 );
 
 /**
- * Resolves whatever image file was dropped into client/public/creator,
- * so the photo works regardless of its filename or extension.
+ * Resolves whatever image file lives in the creator assets folder, so the
+ * photo works regardless of filename/extension if it's ever swapped.
  */
 function resolveCreatorImageUrl() {
   try {

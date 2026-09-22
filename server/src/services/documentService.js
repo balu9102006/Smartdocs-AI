@@ -79,10 +79,12 @@ export const documentService = {
       }
 
       // 3c. Generate embeddings and insert chunks into document_chunks
+      let degradedEmbeddings = false;
       if (chunks.length > 0) {
-        const embeddings = await embeddingService.generateBatchEmbeddings(
+        const { embeddings, degraded } = await embeddingService.generateBatchEmbeddings(
           chunks.map(c => c.content)
         );
+        degradedEmbeddings = degraded;
 
         const chunkRecords = chunks.map((c, i) => ({
           document_id: docId,
@@ -98,6 +100,43 @@ export const documentService = {
 
         if (chunkError) {
           console.error('[DocumentService] Chunk insert error:', chunkError);
+          throw new Error(`Database error saving document chunks: ${chunkError.message}`);
+        }
+      }
+
+      // Record any quality degradation so it's visible instead of a silent,
+      // undetectable drop — this reuses the existing error_message column
+      // rather than a schema change. The document still works (status
+      // stays 'ready'); this is a quality warning, not a failure.
+      const degradationNotes = [];
+      if (degradedEmbeddings) {
+        degradationNotes.push('Indexed with degraded (non-semantic) embeddings because the configured embedding API was unavailable — search relevance for this document is reduced.');
+      }
+      if (parsed.ocrFailedPageCount > 0) {
+        degradationNotes.push(`OCR failed on ${parsed.ocrFailedPageCount} scanned/handwritten page(s) — that content was not indexed.`);
+      }
+      if (degradationNotes.length > 0) {
+        const message = degradationNotes.join(' ');
+        console.warn(`[DocumentService] Document ${docId} has quality issues: ${message}`);
+        const updatePayload = { error_message: message };
+        // Record which embedding space this document's chunks live in so a
+        // later question can be embedded the same way (see ragService.js).
+        // Only set on the degraded path — 'gemini' is the column default,
+        // matching the normal case.
+        if (degradedEmbeddings) {
+          updatePayload.embedding_source = 'hash-fallback';
+        }
+        const { error: updateError } = await supabaseAdmin
+          .from('documents')
+          .update(updatePayload)
+          .eq('id', docId);
+        if (updateError) {
+          // Most likely cause: the embedding_source column migration (see
+          // the note at the top of schema.sql) hasn't been applied yet.
+          // Don't fail the upload over a quality-tracking write — just warn.
+          console.warn('[DocumentService] Could not record document quality notes:', updateError.message);
+        } else {
+          Object.assign(docRecord, updatePayload);
         }
       }
 

@@ -9,10 +9,34 @@ export const ragService = {
   async retrieveContextChunks({ documentId, question, userId, topK = 4, threshold = 0.35 }) {
     console.log(`[RAGService] Retrieving chunks for question: "${question}" (doc: ${documentId})`);
 
-    // 1. Convert question into dense embedding vector
-    const questionEmbedding = await embeddingService.generateEmbedding(question);
+    // 1. Find out which embedding space this document's chunks were
+    // written into, so the question is embedded the SAME way — comparing a
+    // real Gemini embedding against a hash-fallback one (or vice versa)
+    // produces a meaningless similarity score even though both are
+    // technically 1536-d vectors. Defaults to 'gemini' (the normal case,
+    // and also the safe default if the embedding_source column/migration
+    // isn't applied yet — see the note at the top of schema.sql).
+    let embeddingSource = 'gemini';
+    if (isSupabaseConfigured && supabaseAdmin) {
+      const { data: docRow, error: docRowError } = await supabaseAdmin
+        .from('documents')
+        .select('embedding_source')
+        .eq('id', documentId)
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (docRowError) {
+        console.warn('[RAGService] Could not read embedding_source, defaulting to gemini:', docRowError.message);
+      } else if (docRow?.embedding_source) {
+        embeddingSource = docRow.embedding_source;
+      }
+    }
 
-    // 2. Supabase pgvector RPC search
+    // 2. Convert question into a dense embedding vector, in that same space
+    const questionEmbedding = await embeddingService.generateEmbedding(question, {
+      forceFallback: embeddingSource === 'hash-fallback'
+    });
+
+    // 3. Supabase pgvector RPC search
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
         const { data: chunks, error } = await supabaseAdmin.rpc('match_document_chunks', {
@@ -39,16 +63,21 @@ export const ragService = {
       }
     }
 
-    // 3. In-memory fallback similarity search
+    // 4. In-memory fallback similarity search
     const doc = await documentService.getDocumentById(documentId, userId);
     if (!doc || !doc.chunks || doc.chunks.length === 0) {
       return [];
     }
 
-    // Compute cosine similarity for each chunk
+    // Compute cosine similarity for each chunk. Same embedding space as the
+    // question above — chunks are re-embedded fresh here (this path has no
+    // stored vectors), so both sides must agree the same way the RPC path
+    // does above, or this reintroduces the exact mixed-space bug.
     const scoredChunks = await Promise.all(
       doc.chunks.map(async (chunk) => {
-        const chunkEmbedding = await embeddingService.generateEmbedding(chunk.content);
+        const chunkEmbedding = await embeddingService.generateEmbedding(chunk.content, {
+          forceFallback: embeddingSource === 'hash-fallback'
+        });
         const similarity = embeddingService.cosineSimilarity(questionEmbedding, chunkEmbedding);
         return {
           chunkId: chunk.id || `chunk-${chunk.chunkIndex}`,
