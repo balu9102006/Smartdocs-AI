@@ -58,7 +58,7 @@ export default function DocumentWorkspacePage() {
   const [activeSourcePreview, setActiveSourcePreview] = useState(null);
   const [isOpeningFile, setIsOpeningFile] = useState(false);
   const [fileOpenError, setFileOpenError] = useState('');
-  const [blockedFileUrl, setBlockedFileUrl] = useState('');
+  const [fileDownloadUrl, setFileDownloadUrl] = useState('');
 
   // Phase 12 analysis loading states
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
@@ -251,42 +251,34 @@ export default function DocumentWorkspacePage() {
     }
   }, [activeTab, doc, isGeneratingSummary, isExtractingPoints, isGeneratingQuiz, handleRegenerateSummary, handleExtractKeyPoints, handleGenerateQuiz]);
 
+  // Opening a new tab reliably across real browsers, when the URL to open
+  // isn't known until after an async call, turns out to be genuinely hard:
+  // - window.open(url) called AFTER the await has no user-activation left
+  //   in most browsers, so it's just blocked outright (returns null).
+  // - window.open('', '_blank') called BEFORE the await (to open while
+  //   activation is fresh), then navigated via .location.href once the URL
+  //   arrives, sounds right but isn't reliable either — confirmed live
+  //   against a real browser, some engines silently refuse that delayed
+  //   navigation (a same heuristic to the one above, applied to the
+  //   already-open window instead of to window.open itself), leaving the
+  //   tab stuck on about:blank with no error at all.
+  // The only approach that reliably works everywhere is a real <a> element
+  // the user clicks themselves — an actual click on an anchor is always
+  // treated as a direct, first-class navigation. So: fetch the URL, then
+  // hand the user a real link instead of guessing whether a scripted
+  // open/navigate will be allowed this time.
   const handleOpenOriginalFile = async () => {
     if (!doc || isOpeningFile) return;
     setFileOpenError('');
-    setBlockedFileUrl('');
+    setFileDownloadUrl('');
     setIsOpeningFile(true);
-
-    // Open the tab synchronously, inside the click handler — opening it
-    // only after the `await` below loses the user-gesture context and gets
-    // silently popup-blocked in real browsers.
-    //
-    // Deliberately no 'noopener' here: that flag severs this window's
-    // ability to control the tab it just opened, which breaks the
-    // `newTab.location.href = url` navigation below (confirmed live — the
-    // tab opened but stayed stuck on about:blank). We're navigating it to
-    // our own backend-issued signed URL, not attacker-controlled content,
-    // so the isolation noopener provides isn't needed here.
-    const newTab = window.open('', '_blank');
-
     try {
       const url = await api.getFileUrl(doc.id);
       if (!url) {
-        // The backend genuinely has no file for this document.
-        newTab?.close();
         setFileOpenError('The original file is not available for this document.');
         return;
       }
-      if (newTab) {
-        newTab.location.href = url;
-      } else {
-        // The URL is valid — the browser's popup blocker is what stopped
-        // this, not a missing file. Offer a direct link instead: a real
-        // click on it counts as a fresh user gesture, so it won't be
-        // blocked the way the automatic window.open() above was.
-        setBlockedFileUrl(url);
-        setFileOpenError('Your browser blocked the popup. Use the link below to open the file.');
-      }
+      setFileDownloadUrl(url);
     } finally {
       setIsOpeningFile(false);
     }
@@ -599,30 +591,37 @@ export default function DocumentWorkspacePage() {
                     <span className="text-brass-dim font-mono">Cosine similarity</span>
                   </div>
                 </div>
-                <button
-                  onClick={handleOpenOriginalFile}
-                  disabled={isOpeningFile}
-                  className="mt-4 w-full btn-brass px-3 py-2 text-xs flex items-center justify-center gap-1.5"
-                >
-                  {isOpeningFile ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <FileText className="w-3.5 h-3.5" />
-                  )}
-                  <span>Open Original File</span>
-                </button>
-                {fileOpenError && (
-                  <p className="mt-2 text-[11px] text-red-700">{fileOpenError}</p>
-                )}
-                {blockedFileUrl && (
+                {fileDownloadUrl ? (
+                  // A real <a> the user clicks themselves — see the note on
+                  // handleOpenOriginalFile above for why this replaced a
+                  // scripted window.open() here instead of sitting behind it
+                  // as a fallback.
                   <a
-                    href={blockedFileUrl}
+                    href={fileDownloadUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-1.5 inline-block text-[11px] text-brass-dim underline hover:text-brass"
+                    onClick={() => setFileDownloadUrl('')}
+                    className="mt-4 w-full btn-brass px-3 py-2 text-xs flex items-center justify-center gap-1.5"
                   >
-                    Open {doc.fileName}
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Open {doc.fileName}</span>
                   </a>
+                ) : (
+                  <button
+                    onClick={handleOpenOriginalFile}
+                    disabled={isOpeningFile}
+                    className="mt-4 w-full btn-brass px-3 py-2 text-xs flex items-center justify-center gap-1.5"
+                  >
+                    {isOpeningFile ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <FileText className="w-3.5 h-3.5" />
+                    )}
+                    <span>Open Original File</span>
+                  </button>
+                )}
+                {fileOpenError && (
+                  <p className="mt-2 text-[11px] text-red-700">{fileOpenError}</p>
                 )}
               </div>
 
