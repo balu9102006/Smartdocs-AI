@@ -7,6 +7,7 @@ import { isCreatorQuestion, buildCreatorResponse } from '../services/creatorServ
 import { requireAuth } from '../middleware/auth.js';
 import { llmRateLimiter } from '../middleware/rateLimit.js';
 import { supabaseAdmin, isSupabaseConfigured } from '../config/supabase.js';
+import { config } from '../config/index.js';
 
 const MAX_QUESTION_LENGTH = 2000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -54,8 +55,8 @@ router.post('/ask', requireAuth, llmRateLimiter, async (req, res, next) => {
       documentId,
       question,
       userId,
-      topK: 4,
-      threshold: 0.30
+      topK: config.rag.topK,
+      threshold: config.rag.similarityThreshold
     });
 
     // 3. Generate answer using Qwen via Groq
@@ -136,6 +137,10 @@ router.post('/ask', requireAuth, llmRateLimiter, async (req, res, next) => {
       answer: aiResult.answer,
       sources: aiResult.sources,
       grounded: aiResult.grounded !== false,
+      // Only present on ungrounded answers — a separate, clearly-unverified
+      // general-knowledge answer the UI renders in its own distinct block,
+      // never merged into the grounded answer above.
+      externalAnswer: aiResult.externalAnswer || null,
       sessionId: activeSessionId,
       model: aiResult.model
     });

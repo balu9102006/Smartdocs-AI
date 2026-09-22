@@ -25,7 +25,8 @@ export const aiService = {
         answer: `**${documentName}** doesn't contain information to answer that question. Try rephrasing, or ask something covered by the uploaded document.`,
         model: 'smartdocs-system',
         grounded: false,
-        sources: []
+        sources: [],
+        externalAnswer: await generateGeneralKnowledgeAnswer(question)
       };
     }
 
@@ -77,7 +78,8 @@ Provide a helpful, direct, and factually grounded answer with citations:`;
             chunkId: c.chunkId,
             page: c.page,
             text: c.text.substring(0, 140) + '...'
-          }))
+          })),
+          externalAnswer: isRefusal ? await generateGeneralKnowledgeAnswer(question) : undefined
         };
       } catch (err) {
         console.warn('[AIService] Groq API error, falling back to local grounded generator:', err.message);
@@ -98,6 +100,44 @@ Provide a helpful, direct, and factually grounded answer with citations:`;
     };
   }
 };
+
+// Deliberately separate from the document system prompt above — this path
+// must NEVER be confused with a grounded, cited answer. No document
+// excerpts are given to the model here, and the prompt explicitly forbids
+// it from pretending otherwise or inventing a page citation.
+const GENERAL_KNOWLEDGE_SYSTEM_PROMPT = `You are answering a question that the user's uploaded document does NOT cover, using your own general knowledge instead.
+Rules:
+1. Answer helpfully and concisely from your own knowledge.
+2. NEVER claim or imply this answer came from the uploaded document. Do not cite a page number or any document excerpt — you were given none.
+3. If you are not confident in the answer, say so plainly rather than guessing.
+4. Format with clean Markdown where it helps readability.`;
+
+/**
+ * Answers a question the document doesn't cover, using the model's own
+ * general knowledge. Called only from the two "ungrounded" paths above —
+ * the result is surfaced separately in the UI (see DocumentWorkspacePage),
+ * clearly labeled as unverified and not from the document, never merged
+ * into a grounded answer's citations.
+ */
+async function generateGeneralKnowledgeAnswer(question) {
+  if (!isGroqConfigured || !groq) return null;
+
+  try {
+    const completion = await groq.chat.completions.create({
+      model: config.groq.defaultModel || 'qwen/qwen3.8-27b',
+      messages: [
+        { role: 'system', content: GENERAL_KNOWLEDGE_SYSTEM_PROMPT },
+        { role: 'user', content: question }
+      ],
+      temperature: 0.4,
+      max_completion_tokens: 600
+    });
+    return completion.choices[0]?.message?.content?.trim() || null;
+  } catch (err) {
+    console.warn('[AIService] General-knowledge fallback failed:', err.message);
+    return null;
+  }
+}
 
 /**
  * Detects the model's own "insufficient info" refusal so the UI can flag the

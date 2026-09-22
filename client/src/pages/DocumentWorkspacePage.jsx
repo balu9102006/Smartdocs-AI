@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -17,12 +17,27 @@ import {
   ChevronRight,
   Loader2,
   RefreshCw,
-  AlertTriangle
+  AlertTriangle,
+  Globe
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import CreatorProfileCard from '../components/CreatorProfileCard';
 import Markdown from '../components/Markdown';
+
+// Groups retrieved-chunk sources by page number, preserving first-seen
+// order, so the citation row shows one badge per page instead of one per
+// chunk (a dense page can contribute more than one of the top-K chunks).
+function groupSourcesByPage(sources) {
+  const byPage = new Map();
+  for (const src of sources) {
+    if (!byPage.has(src.page)) {
+      byPage.set(src.page, { page: src.page, texts: [] });
+    }
+    byPage.get(src.page).texts.push(src.text);
+  }
+  return [...byPage.values()];
+}
 
 export default function DocumentWorkspacePage() {
   const { id } = useParams();
@@ -51,33 +66,7 @@ export default function DocumentWorkspacePage() {
 
   const chatEndRef = useRef(null);
 
-  useEffect(() => {
-    loadDocument();
-  }, [id]);
-
-  useEffect(() => {
-    if (searchParams.get('tab')) {
-      setActiveTab(searchParams.get('tab'));
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isAiThinking]);
-
-  // Auto-generate analysis content the first time its tab is opened.
-  useEffect(() => {
-    if (!doc) return;
-    if (activeTab === 'summary' && !doc.summary && !isGeneratingSummary) {
-      handleRegenerateSummary();
-    } else if (activeTab === 'keypoints' && (!doc.keyPoints || doc.keyPoints.length === 0) && !isExtractingPoints) {
-      handleExtractKeyPoints();
-    } else if (activeTab === 'quiz' && (!doc.mcqs || doc.mcqs.length === 0) && !isGeneratingQuiz) {
-      handleGenerateQuiz();
-    }
-  }, [activeTab, doc, isGeneratingSummary, isExtractingPoints, isGeneratingQuiz]);
-
-  const loadDocument = async () => {
+  const loadDocument = useCallback(async () => {
     setNotFound(false);
     setLoadError('');
     try {
@@ -97,7 +86,21 @@ export default function DocumentWorkspacePage() {
         setLoadError(err.message || 'Failed to load this document.');
       }
     }
-  };
+  }, [id, signOut]);
+
+  useEffect(() => {
+    loadDocument();
+  }, [loadDocument]);
+
+  useEffect(() => {
+    if (searchParams.get('tab')) {
+      setActiveTab(searchParams.get('tab'));
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isAiThinking]);
 
   const handleTabChange = (tabKey) => {
     setActiveTab(tabKey);
@@ -137,7 +140,21 @@ export default function DocumentWorkspacePage() {
         profile: backendResult.profile || null,
         createdAt: new Date().toISOString()
       };
-      setMessages(prev => [...prev, aiMessage]);
+
+      const newMessages = [aiMessage];
+      if (backendResult.externalAnswer) {
+        // A separate bubble, never merged into the grounded message above —
+        // this content did not come from the document and must never be
+        // mistaken for a cited answer.
+        newMessages.push({
+          id: 'ext-' + Date.now(),
+          role: 'assistant',
+          isExternal: true,
+          content: backendResult.externalAnswer,
+          createdAt: new Date().toISOString()
+        });
+      }
+      setMessages(prev => [...prev, ...newMessages]);
       if (backendResult.sessionId) {
         setSessionId(backendResult.sessionId);
       }
@@ -170,7 +187,7 @@ export default function DocumentWorkspacePage() {
     }
   };
 
-  const handleRegenerateSummary = async () => {
+  const handleRegenerateSummary = useCallback(async () => {
     if (isGeneratingSummary || !doc) return;
     setIsGeneratingSummary(true);
     try {
@@ -183,9 +200,9 @@ export default function DocumentWorkspacePage() {
     } finally {
       setIsGeneratingSummary(false);
     }
-  };
+  }, [doc, isGeneratingSummary]);
 
-  const handleExtractKeyPoints = async () => {
+  const handleExtractKeyPoints = useCallback(async () => {
     if (isExtractingPoints || !doc) return;
     setIsExtractingPoints(true);
     try {
@@ -198,9 +215,9 @@ export default function DocumentWorkspacePage() {
     } finally {
       setIsExtractingPoints(false);
     }
-  };
+  }, [doc, isExtractingPoints]);
 
-  const handleGenerateQuiz = async () => {
+  const handleGenerateQuiz = useCallback(async () => {
     if (isGeneratingQuiz || !doc) return;
     setIsGeneratingQuiz(true);
     try {
@@ -214,7 +231,24 @@ export default function DocumentWorkspacePage() {
     } finally {
       setIsGeneratingQuiz(false);
     }
-  };
+  }, [doc, isGeneratingQuiz]);
+
+  // Auto-generate analysis content the first time its tab is opened. Each
+  // handler above already guards on its own "is this already loaded/in
+  // flight" state, so including them here (now stable via useCallback,
+  // rather than a lint-silencing omission) doesn't cause repeat calls —
+  // once doc.summary/keyPoints/mcqs is set, the corresponding branch's
+  // guard condition is false and the effect body is a no-op on re-runs.
+  useEffect(() => {
+    if (!doc) return;
+    if (activeTab === 'summary' && !doc.summary && !isGeneratingSummary) {
+      handleRegenerateSummary();
+    } else if (activeTab === 'keypoints' && (!doc.keyPoints || doc.keyPoints.length === 0) && !isExtractingPoints) {
+      handleExtractKeyPoints();
+    } else if (activeTab === 'quiz' && (!doc.mcqs || doc.mcqs.length === 0) && !isGeneratingQuiz) {
+      handleGenerateQuiz();
+    }
+  }, [activeTab, doc, isGeneratingSummary, isExtractingPoints, isGeneratingQuiz, handleRegenerateSummary, handleExtractKeyPoints, handleGenerateQuiz]);
 
   const handleOpenOriginalFile = async () => {
     if (!doc || isOpeningFile) return;
@@ -389,6 +423,8 @@ export default function DocumentWorkspacePage() {
                           ? 'bg-ink-text text-parchment rounded-tr-none'
                           : msg.isError
                           ? 'bg-red-50 border border-red-300 text-ink-text rounded-tl-none'
+                          : msg.isExternal
+                          ? 'bg-sky-50 border border-sky-300 text-ink-text rounded-tl-none'
                           : msg.grounded === false
                           ? 'bg-amber-50 border border-amber-300 text-ink-text rounded-tl-none'
                           : 'sheet-well text-ink-text rounded-tl-none'
@@ -398,12 +434,19 @@ export default function DocumentWorkspacePage() {
                         <div className={`flex items-center gap-2 mb-2 pb-2 border-b index-label ${
                           msg.isError
                             ? 'border-red-300 text-red-700'
+                            : msg.isExternal
+                            ? 'border-sky-300 text-sky-700'
                             : msg.grounded === false ? 'border-amber-300 text-amber-700' : 'border-ink/15 text-brass-dim'
                         }`}>
                           {msg.isError ? (
                             <>
                               <AlertTriangle className="w-3.5 h-3.5" />
                               <span>Couldn't get an answer</span>
+                            </>
+                          ) : msg.isExternal ? (
+                            <>
+                              <Globe className="w-3.5 h-3.5" />
+                              <span>General Knowledge — Not from your document, unverified</span>
                             </>
                           ) : msg.grounded === false ? (
                             <>
@@ -429,20 +472,25 @@ export default function DocumentWorkspacePage() {
                       {/* Creator Profile Card */}
                       {msg.profile && <CreatorProfileCard profile={msg.profile} />}
 
-                      {/* Source Citations Badges */}
+                      {/* Source Citations Badges — one per unique page. The
+                          top-K retrieved chunks can include more than one
+                          chunk from the same page (a dense page splits into
+                          several ~800-char chunks), so group by page rather
+                          than rendering a badge per chunk — otherwise the
+                          same page number shows up twice in the row. */}
                       {msg.sources && msg.sources.length > 0 && (
                         <div className="mt-3 pt-3 border-t border-ink/15">
                           <p className="index-label text-ink-text/50 mb-1.5">
                             Grounded Citations:
                           </p>
                           <div className="flex flex-wrap items-center gap-2">
-                            {msg.sources.map((src, i) => (
+                            {groupSourcesByPage(msg.sources).map((group) => (
                               <button
-                                key={i}
-                                onClick={() => setActiveSourcePreview(src)}
+                                key={group.page}
+                                onClick={() => setActiveSourcePreview(group)}
                                 className="tab-brass hover:bg-brass-light transition-colors flex items-center gap-1 cursor-pointer"
                               >
-                                <span>Page {src.page}</span>
+                                <span>Page {group.page}</span>
                                 <ChevronRight className="w-3 h-3" />
                               </button>
                             ))}
@@ -563,9 +611,13 @@ export default function DocumentWorkspacePage() {
                       Close
                     </button>
                   </div>
-                  <p className="text-xs text-ink-text/80 italic leading-relaxed">
-                    "{activeSourcePreview.text}"
-                  </p>
+                  <div className="space-y-3">
+                    {activeSourcePreview.texts.map((text, i) => (
+                      <p key={i} className="text-xs text-ink-text/80 italic leading-relaxed">
+                        "{text}"
+                      </p>
+                    ))}
+                  </div>
                 </div>
               ) : (
                 <div className="p-5 rounded-md border border-ink-line text-xs text-parchment-dim leading-relaxed">
