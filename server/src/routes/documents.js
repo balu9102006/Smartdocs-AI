@@ -80,6 +80,23 @@ router.get('/:id', requireAuth, async (req, res, next) => {
 });
 
 /**
+ * GET /api/documents/:id/file
+ * Returns a short-lived signed URL to view/download the original file.
+ */
+router.get('/:id/file', requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.id || 'user-default-1';
+    const url = await documentService.getFileUrl(req.params.id, userId);
+    if (!url) {
+      return res.status(404).json({ error: 'Original file is not available for this document.' });
+    }
+    res.json({ url });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * DELETE /api/documents/:id
  * Deletes a document and its associated data.
  */

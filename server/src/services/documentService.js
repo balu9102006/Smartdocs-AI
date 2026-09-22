@@ -197,6 +197,40 @@ export const documentService = {
   },
 
   /**
+   * Generates a short-lived signed URL to view/download the original
+   * uploaded file from the private Supabase Storage bucket.
+   */
+  async getFileUrl(docId, userId) {
+    if (!isSupabaseConfigured || !supabaseAdmin) {
+      // Local sandbox mode never persists the raw file bytes anywhere
+      // retrievable — only the extracted text/chunks are kept.
+      return null;
+    }
+
+    const { data: doc, error } = await supabaseAdmin
+      .from('documents')
+      .select('storage_path, file_name')
+      .eq('id', docId)
+      .eq('user_id', userId)
+      .single();
+
+    if (error || !doc || !doc.storage_path) return null;
+
+    const { data, error: signError } = await supabaseAdmin.storage
+      .from('documents')
+      .createSignedUrl(doc.storage_path, 300, {
+        download: doc.file_name
+      });
+
+    if (signError) {
+      console.error('[DocumentService] createSignedUrl error:', signError.message);
+      return null;
+    }
+
+    return data.signedUrl;
+  },
+
+  /**
    * Deletes a document and all related records/files.
    */
   async deleteDocument(docId, userId) {

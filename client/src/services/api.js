@@ -162,6 +162,21 @@ export const api = {
     return newDoc;
   },
 
+  async getFileUrl(id) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/documents/${id}/file`, {
+        headers: await getAuthHeaders()
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data.url;
+      }
+    } catch (err) {
+      console.warn('[API] Could not get file URL:', err);
+    }
+    return null;
+  },
+
   async deleteDocument(id) {
     // The local mirror can hold a stale copy of any document (synced on
     // upload for instant display), so it must be pruned on every delete

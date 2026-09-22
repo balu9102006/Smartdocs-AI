@@ -36,6 +36,8 @@ export default function DocumentWorkspacePage() {
   const [copiedSummary, setCopiedSummary] = useState(false);
   const [selectedQuizAnswers, setSelectedQuizAnswers] = useState({});
   const [activeSourcePreview, setActiveSourcePreview] = useState(null);
+  const [isOpeningFile, setIsOpeningFile] = useState(false);
+  const [fileOpenError, setFileOpenError] = useState('');
 
   // Phase 12 analysis loading states
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
@@ -115,6 +117,7 @@ export default function DocumentWorkspacePage() {
           role: 'assistant',
           content: backendResult.answer,
           sources: backendResult.sources || [],
+          grounded: backendResult.grounded !== false,
           profile: backendResult.profile || null,
           createdAt: new Date().toISOString()
         };
@@ -220,6 +223,29 @@ The document specifies that the underlying system integrates isolated components
       console.error('Quiz error:', err);
     } finally {
       setIsGeneratingQuiz(false);
+    }
+  };
+
+  const handleOpenOriginalFile = async () => {
+    if (!doc || isOpeningFile) return;
+    setFileOpenError('');
+    setIsOpeningFile(true);
+
+    // Open the tab synchronously, inside the click handler — opening it
+    // only after the `await` below loses the user-gesture context and gets
+    // silently popup-blocked in real browsers.
+    const newTab = window.open('', '_blank', 'noopener,noreferrer');
+
+    try {
+      const url = await api.getFileUrl(doc.id);
+      if (url && newTab) {
+        newTab.location.href = url;
+      } else {
+        newTab?.close();
+        setFileOpenError('The original file is not available for this document.');
+      }
+    } finally {
+      setIsOpeningFile(false);
     }
   };
 
@@ -358,13 +384,26 @@ The document specifies that the underlying system integrates isolated components
                       className={`max-w-2xl rounded-2xl p-4 text-xs sm:text-sm leading-relaxed shadow-md ${
                         msg.role === 'user'
                           ? 'bg-ink-text text-parchment rounded-tr-none'
+                          : msg.grounded === false
+                          ? 'bg-amber-50 border border-amber-300 text-ink-text rounded-tl-none'
                           : 'sheet-well text-ink-text rounded-tl-none'
                       }`}
                     >
                       {msg.role === 'assistant' && (
-                        <div className="flex items-center gap-2 mb-2 pb-2 border-b border-ink/15 index-label text-brass-dim">
-                          <Sparkles className="w-3.5 h-3.5" />
-                          <span>SmartDocs AI Assistant</span>
+                        <div className={`flex items-center gap-2 mb-2 pb-2 border-b index-label ${
+                          msg.grounded === false ? 'border-amber-300 text-amber-700' : 'border-ink/15 text-brass-dim'
+                        }`}>
+                          {msg.grounded === false ? (
+                            <>
+                              <Info className="w-3.5 h-3.5" />
+                              <span>Not found in this document</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-3.5 h-3.5" />
+                              <span>SmartDocs AI Assistant</span>
+                            </>
+                          )}
                         </div>
                       )}
 
@@ -481,6 +520,21 @@ The document specifies that the underlying system integrates isolated components
                     <span className="text-brass-dim font-mono">Cosine similarity</span>
                   </div>
                 </div>
+                <button
+                  onClick={handleOpenOriginalFile}
+                  disabled={isOpeningFile}
+                  className="mt-4 w-full btn-brass px-3 py-2 text-xs flex items-center justify-center gap-1.5"
+                >
+                  {isOpeningFile ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <FileText className="w-3.5 h-3.5" />
+                  )}
+                  <span>Open Original File</span>
+                </button>
+                {fileOpenError && (
+                  <p className="mt-2 text-[11px] text-red-700">{fileOpenError}</p>
+                )}
               </div>
 
               {/* Source Chunk Preview Widget */}
