@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   UploadCloud,
   FileText,
@@ -6,16 +6,14 @@ import {
   Layers,
   Database,
   CheckCircle2,
-  Sparkles,
-  HelpCircle,
-  Clock,
   Plus,
   AlertTriangle,
-  RefreshCw
+  RefreshCw,
+  Loader2
 } from 'lucide-react';
 import DocumentCard from '../components/DocumentCard';
 import UploadModal from '../components/UploadModal';
-import { api, getStoredDocuments } from '../services/api';
+import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 export default function DashboardPage() {
@@ -28,11 +26,7 @@ export default function DashboardPage() {
   const [loadError, setLoadError] = useState('');
   const [actionError, setActionError] = useState('');
 
-  useEffect(() => {
-    loadDocs();
-  }, []);
-
-  const loadDocs = async () => {
+  const loadDocs = useCallback(async () => {
     setLoading(true);
     setLoadError('');
     try {
@@ -46,7 +40,11 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [signOut]);
+
+  useEffect(() => {
+    loadDocs();
+  }, [loadDocs]);
 
   const handleUploadSuccess = async (file) => {
     setActionError('');
@@ -175,7 +173,15 @@ export default function DashboardPage() {
       )}
 
       {/* Shelves */}
-      {loadError ? (
+      {loading && documents.length === 0 ? (
+        // Only take over the whole view on the first load — a background
+        // refresh (after upload/delete) keeps showing the existing grid
+        // instead of hiding it behind a spinner every time.
+        <div className="p-12 text-center">
+          <Loader2 className="w-8 h-8 text-brass animate-spin mx-auto mb-3" />
+          <p className="text-sm text-parchment-dim">Loading your documents...</p>
+        </div>
+      ) : loadError ? (
         <div className="p-12 text-center border border-dashed border-red-800/50 rounded-md bg-red-950/20">
           <AlertTriangle className="w-10 h-10 text-red-400/70 mx-auto mb-3" />
           <h3 className="font-display text-base font-semibold text-parchment">Couldn't load your documents</h3>

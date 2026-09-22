@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { UploadCloud, FileText, X, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { UploadCloud, FileText, X, AlertCircle, Loader2 } from 'lucide-react';
 
 export default function UploadModal({ isOpen, onClose, onUploadSuccess }) {
   const [dragActive, setDragActive] = useState(false);

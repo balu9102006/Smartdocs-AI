@@ -39,7 +39,8 @@ export const documentService = {
     const chunks = chunkText(parsed.text, {
       chunkSize: 800,
       chunkOverlap: 150,
-      totalPages: parsed.totalPages
+      totalPages: parsed.totalPages,
+      pageMap: parsed.pageMap || null
     });
     console.log(`[DocumentService] Generated ${chunks.length} chunks.`);
 

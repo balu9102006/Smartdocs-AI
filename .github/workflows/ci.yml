@@ -1,0 +1,46 @@
+name: CI
+
+# There is no test suite in this repo yet (see item 24 in the audit this
+# workflow accompanies) — this intentionally stays scoped to what actually
+# exists: linting and a production build for the client, and a dependency
+# install sanity check for the server. Expand it as real tests are added
+# rather than pretending coverage that isn't there.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - name: Syntax-check all source files
+        run: find src -name '*.js' -print0 | xargs -0 -n1 node --check

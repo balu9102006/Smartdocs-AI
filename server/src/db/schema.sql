@@ -84,11 +84,15 @@ create index if not exists idx_chat_messages_session_id
   on public.chat_messages (session_id);
 
 -- 6. Vector Similarity Search RPC Function
--- Used by the backend to retrieve the top-k most relevant chunks for a user's question
+-- Used by the backend to retrieve the top-k most relevant chunks for a user's question.
+-- The app (chat.js, via config.rag.similarityThreshold / RAG_SIMILARITY_THRESHOLD)
+-- always passes match_threshold explicitly, so this default only matters for
+-- an ad-hoc/manual call — kept in sync with that app-level default (0.30)
+-- rather than an unrelated leftover value.
 create or replace function match_document_chunks(
   query_embedding vector(1536),
-  match_threshold float default 0.65,
-  match_count int default 5,
+  match_threshold float default 0.30,
+  match_count int default 4,
   p_user_id uuid default null,
   p_doc_id uuid default null
 )

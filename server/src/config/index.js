@@ -15,6 +15,15 @@ export const config = {
   },
   embeddings: {
     apiKey: process.env.EMBEDDING_API_KEY || '',
+  },
+  rag: {
+    // Single source of truth for the retrieval similarity cutoff. Previously
+    // this value was duplicated (and drifted) across schema.sql's RPC
+    // default (0.65), chat.js's call site (0.30), and ragService's own
+    // default parameter (0.35) — three different numbers all claiming to be
+    // "the" threshold, only one of which was actually reachable in practice.
+    similarityThreshold: Number(process.env.RAG_SIMILARITY_THRESHOLD) || 0.30,
+    topK: Number(process.env.RAG_TOP_K) || 4,
   }
 };
 

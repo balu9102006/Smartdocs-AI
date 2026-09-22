@@ -35,6 +35,14 @@ export async function extractTextFromPdf(buffer) {
     let rawText = '';
     let ocrPageCount = 0;
     let ocrFailedPageCount = 0;
+    // Real per-page character ranges in the final `text`, so a chunk's page
+    // number can be looked up directly instead of estimated from
+    // (charOffset / totalLength) * totalPages — which drifts on any density
+    // variation (title pages, figures, tables, OCR'd pages all have very
+    // different text-per-page). Built from each page's OWN cleaned text so
+    // offsets stay exact — cleaning the final concatenated string afterward
+    // (collapsing whitespace, trimming) would shift them.
+    const pageMap = [];
 
     for (let i = 1; i <= doc.numPages; i++) {
       const page = await doc.getPage(i);
@@ -57,7 +65,10 @@ export async function extractTextFromPdf(buffer) {
         }
       }
 
-      rawText += pageText + '\n';
+      const cleanedPageText = cleanText(pageText);
+      const charStart = rawText.length;
+      rawText += cleanedPageText + '\n';
+      pageMap.push({ page: i, charStart, charEnd: rawText.length });
     }
 
     if (ocrPageCount > 0) {
@@ -68,8 +79,13 @@ export async function extractTextFromPdf(buffer) {
     }
 
     return {
-      text: cleanText(rawText),
+      // rawText is already built from per-page cleanText() calls (each
+      // page's own text is already trimmed/normalized) — NOT re-trimmed or
+      // re-cleaned as a whole string here, because that would shift
+      // character offsets out from under pageMap above.
+      text: rawText,
       totalPages: doc.numPages,
+      pageMap,
       ocrPageCount,
       ocrFailedPageCount
     };

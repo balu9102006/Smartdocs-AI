@@ -1,12 +1,36 @@
 import { supabaseAdmin, isSupabaseConfigured } from '../config/supabase.js';
+import { config } from '../config/index.js';
 import { embeddingService } from './embeddingService.js';
 import { documentService } from './documentService.js';
+
+// The in-memory fallback path below has no stored vectors, so it
+// re-embeds every chunk of a document on every single question asked
+// against it — this cache avoids repeating that work (and the Gemini
+// calls it costs) when the same chunk is asked about again. Capped so a
+// long-running server doesn't grow this unboundedly; a cache miss just
+// costs one embedding call, so evicting early is always safe.
+const MAX_CACHE_ENTRIES = 2000;
+const chunkEmbeddingCache = new Map();
+
+async function getCachedChunkEmbedding(chunk, forceFallback) {
+  const key = `${forceFallback ? 'fb' : 'real'}:${chunk.id || chunk.chunkIndex}`;
+  const cached = chunkEmbeddingCache.get(key);
+  if (cached && cached.content === chunk.content) {
+    return cached.embedding;
+  }
+  const embedding = await embeddingService.generateEmbedding(chunk.content, { forceFallback });
+  if (chunkEmbeddingCache.size >= MAX_CACHE_ENTRIES) {
+    chunkEmbeddingCache.delete(chunkEmbeddingCache.keys().next().value);
+  }
+  chunkEmbeddingCache.set(key, { content: chunk.content, embedding });
+  return embedding;
+}
 
 export const ragService = {
   /**
    * Retrieves the most semantically relevant chunks for a question.
    */
-  async retrieveContextChunks({ documentId, question, userId, topK = 4, threshold = 0.35 }) {
+  async retrieveContextChunks({ documentId, question, userId, topK = config.rag.topK, threshold = config.rag.similarityThreshold }) {
     console.log(`[RAGService] Retrieving chunks for question: "${question}" (doc: ${documentId})`);
 
     // 1. Find out which embedding space this document's chunks were
@@ -70,14 +94,14 @@ export const ragService = {
     }
 
     // Compute cosine similarity for each chunk. Same embedding space as the
-    // question above — chunks are re-embedded fresh here (this path has no
-    // stored vectors), so both sides must agree the same way the RPC path
-    // does above, or this reintroduces the exact mixed-space bug.
+    // question above — chunks are re-embedded here (this path has no
+    // stored vectors, only cached across repeated questions — see
+    // getCachedChunkEmbedding), so both sides must agree the same way the
+    // RPC path does above, or this reintroduces the exact mixed-space bug.
+    const forceFallback = embeddingSource === 'hash-fallback';
     const scoredChunks = await Promise.all(
       doc.chunks.map(async (chunk) => {
-        const chunkEmbedding = await embeddingService.generateEmbedding(chunk.content, {
-          forceFallback: embeddingSource === 'hash-fallback'
-        });
+        const chunkEmbedding = await getCachedChunkEmbedding(chunk, forceFallback);
         const similarity = embeddingService.cosineSimilarity(questionEmbedding, chunkEmbedding);
         return {
           chunkId: chunk.id || `chunk-${chunk.chunkIndex}`,
@@ -89,12 +113,15 @@ export const ragService = {
       })
     );
 
-    // Sort by highest similarity
+    // Sort by highest similarity, then actually apply the threshold (it was
+    // previously computed and never used — every question returned topK
+    // chunks regardless of relevance, so aiService's "no chunks → say I
+    // don't know" guard could never fire on this path).
     scoredChunks.sort((a, b) => b.similarity - a.similarity);
-
-    // Filter by threshold or pick topK
-    const topResults = scoredChunks.slice(0, topK);
-    console.log(`[RAGService] Retrieved ${topResults.length} relevant context chunks.`);
+    const topResults = scoredChunks
+      .filter((c) => c.similarity > threshold)
+      .slice(0, topK);
+    console.log(`[RAGService] Retrieved ${topResults.length} relevant context chunks (${scoredChunks.length} scored, threshold ${threshold}).`);
     return topResults;
   }
 };

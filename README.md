@@ -26,7 +26,7 @@ SMARTDOCS AI is a full-stack, cloud-native web application built with **React + 
      │ ├── Supabase Authentication   │                │ ├── pdf-parse & mammoth       │
      │ ├── Supabase Storage (Files)  │                │ ├── Sliding Window Chunker    │
      │ ├── PostgreSQL Database       │                │ ├── 1536-D Vector Embeddings  │
-     │ └── pgvector Extension (HNSW) │                │ └── Qwen 2.5 LLM (via Groq)   │
+     │ └── pgvector Extension (HNSW) │                │ └── Qwen3.8 LLM (via Groq)   │
      └───────────────────────────────┘                └───────────────────────────────┘
 ```
 
@@ -38,7 +38,7 @@ SMARTDOCS AI is a full-stack, cloud-native web application built with **React + 
 2. **Text Chunking Engine**: Sliding-window chunker with overlapping boundaries (`chunkSize: 800`, `chunkOverlap: 150`) preserving natural paragraph and sentence structure.
 3. **Dedicated Embedding Pipeline**: Decoupled vectorization generating 1536-dimensional normalized embeddings for Supabase pgvector.
 4. **Vector Similarity Search (RAG)**: Cosine distance similarity search via `match_document_chunks` RPC, strictly scoped by `user_id` and `document_id`.
-5. **Context-Grounded Chatbot**: Powered by Qwen via Groq with strict anti-hallucination guardrails and clickable **Page Citation Badges** (e.g. `Page 28 • Chunk #104`).
+5. **Context-Grounded Chatbot**: Powered by Qwen via Groq with strict anti-hallucination guardrails and clickable **Page Citation Badges** (e.g. `Page 28 • Chunk #104`). For PDFs, the page number is exact (mapped from pdfjs's real per-page text, not estimated). For DOCX, it's an estimate — Word documents don't store fixed page breaks in their raw text, so an exact page number isn't obtainable without full layout rendering.
 6. **Executive Document Summaries**: Automated synthesis of document objectives, key themes, and conclusions with one-click clipboard copying.
 7. **Key Points & Concepts Extractor**: Numbered core takeaways and definitions.
 8. **Interactive Revision Quizzes & MCQs**: Practice questions with multiple-choice options, instant visual feedback, and explanations.
@@ -103,7 +103,7 @@ SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 GROQ_API_KEY=your_groq_api_key
-GROQ_MODEL=qwen-2.5-32b
+GROQ_MODEL=qwen/qwen3.8-27b
 EMBEDDING_API_KEY=your_openai_or_embedding_key
 ```
 

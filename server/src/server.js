@@ -26,6 +26,25 @@ if (config.nodeEnv === 'production' && !isSupabaseConfigured) {
   process.exit(1);
 }
 
+// GROQ_API_KEY and EMBEDDING_API_KEY aren't boot-fatal (there are working
+// local fallbacks for both), but silently running on them with no signal is
+// exactly how this app has previously shipped with a degraded config
+// unnoticed — a quick, honest summary at startup costs nothing.
+const looksUnset = (value, placeholderPattern) => !value || placeholderPattern.test(value);
+const configWarnings = [];
+if (looksUnset(config.groq.apiKey, /your_groq/i)) {
+  configWarnings.push('GROQ_API_KEY is not set — chat answers and analysis (summary/key points/quiz) will use the local simulated generator, and OCR for scanned/handwritten pages is unavailable.');
+}
+if (looksUnset(config.embeddings.apiKey, /your_/i)) {
+  configWarnings.push('EMBEDDING_API_KEY is not set — documents will be indexed with the degraded hash-based fallback instead of real semantic embeddings (see embeddingService.js).');
+}
+if (configWarnings.length > 0) {
+  console.warn('=============================================');
+  console.warn(' Starting with a degraded configuration:');
+  configWarnings.forEach((w) => console.warn(' - ' + w));
+  console.warn('=============================================');
+}
+
 const app = express();
 
 // Middleware
@@ -38,10 +57,13 @@ const app = express();
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
+// localhost origins are for local development only — leaving them allowed
+// in production would mean anyone running a local dev server could make
+// credentialed requests against the real API.
 const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'http://127.0.0.1:5173',
+  ...(config.nodeEnv !== 'production'
+    ? ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173']
+    : []),
   ...(process.env.CLIENT_ORIGIN ? process.env.CLIENT_ORIGIN.split(',').map(o => o.trim()) : [])
 ];
 
@@ -49,8 +71,12 @@ app.use(cors({
   origin: allowedOrigins,
   credentials: true
 }));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// File uploads go through multer (multipart/form-data), not this JSON
+// parser — no legitimate request here is more than a few KB (a question,
+// document metadata, etc.), so 50mb was pure unused attack surface for a
+// large-body DoS.
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // The backend owns and serves this asset itself — no dependency on the
 // client package's directory being present in this container (it wasn't,

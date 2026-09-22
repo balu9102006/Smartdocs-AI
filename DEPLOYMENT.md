@@ -9,7 +9,7 @@ This guide walks you through deploying **SMARTDOCS AI** to production across clo
 - **Frontend**: Hosted on [Vercel](https://vercel.com) or [Netlify](https://netlify.com)
 - **Backend**: Hosted on [Fly.io](https://fly.io) (recommended, no cold starts on free tier), [Render](https://render.com), or [Railway](https://railway.app)
 - **Database & Storage**: [Supabase](https://supabase.com) (PostgreSQL, pgvector, Storage)
-- **AI Inference**: [Groq](https://console.groq.com) (Qwen 2.5)
+- **AI Inference**: [Groq](https://console.groq.com) (Qwen3.8)
 
 ---
 
@@ -61,7 +61,7 @@ This guide walks you through deploying **SMARTDOCS AI** to production across clo
    fly secrets set SUPABASE_ANON_KEY=your_anon_key
    fly secrets set SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
    fly secrets set GROQ_API_KEY=your_groq_api_key
-   fly secrets set GROQ_MODEL=qwen-2.5-32b
+   fly secrets set GROQ_MODEL=qwen/qwen3.8-27b
    fly secrets set EMBEDDING_API_KEY=your_embedding_or_gemini_key
    fly secrets set CLIENT_ORIGIN=https://your-frontend.vercel.app
    ```
@@ -89,7 +89,7 @@ Fly's free allowance (`shared-cpu-1x`, 256MB) covers a single always-on machine 
    | `SUPABASE_ANON_KEY` | `your_anon_key` |
    | `SUPABASE_SERVICE_ROLE_KEY` | `your_service_role_key` |
    | `GROQ_API_KEY` | `your_groq_api_key` |
-   | `GROQ_MODEL` | `qwen-2.5-32b` |
+   | `GROQ_MODEL` | `qwen/qwen3.8-27b` |
    | `EMBEDDING_API_KEY` | `your_embedding_or_openai_key` |
    | `CLIENT_ORIGIN` | `https://your-frontend.vercel.app` |
 4. Deploy the service and copy your public backend URL (e.g. `https://smartdocs-server.onrender.com`).
