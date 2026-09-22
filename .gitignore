@@ -5,3 +5,7 @@ dist
 *.log
 scratch/
 
+# Claude Code local tooling config (dev-server launch config, session
+# lock files) — machine/session-local, not part of the application.
+.claude/
+
