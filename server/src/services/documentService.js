@@ -8,6 +8,16 @@ import { embeddingService } from './embeddingService.js';
 const localDocumentsStore = new Map();
 const localChunksStore = new Map();
 
+// The raw upload filename becomes part of a Storage object key
+// (`${userId}/${docId}_${filename}`). Strip path separators and anything
+// outside a safe charset so a crafted filename (e.g. containing "../") can
+// never influence which object the key actually points to.
+function sanitizeFilename(name) {
+  const base = name.split(/[/\\]/).pop() || 'file';
+  const cleaned = base.replace(/[^a-zA-Z0-9._-]/g, '_');
+  return cleaned.slice(-200) || 'file';
+}
+
 export const documentService = {
   /**
    * Processes an uploaded document file: storage upload -> text extraction -> chunking -> vector indexing.
@@ -16,7 +26,8 @@ export const documentService = {
     const fileExt = file.originalname.split('.').pop().toLowerCase();
     // Must be a real UUID: the Supabase `documents.id` column is typed uuid.
     const docId = randomUUID();
-    const storagePath = `${userId}/${docId}_${file.originalname}`;
+    const safeFileName = sanitizeFilename(file.originalname);
+    const storagePath = `${userId}/${docId}_${safeFileName}`;
 
     console.log(`[DocumentService] Ingesting "${file.originalname}" (${fileExt}) for user ${userId}...`);
 

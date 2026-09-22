@@ -4,7 +4,10 @@ import { aiService } from '../services/aiService.js';
 import { documentService } from '../services/documentService.js';
 import { isCreatorQuestion, buildCreatorResponse } from '../services/creatorService.js';
 import { requireAuth } from '../middleware/auth.js';
+import { llmRateLimiter } from '../middleware/rateLimit.js';
 import { supabaseAdmin, isSupabaseConfigured } from '../config/supabase.js';
+
+const MAX_QUESTION_LENGTH = 2000;
 
 const router = express.Router();
 
@@ -17,13 +20,16 @@ const localChatMessages = new Map();
  * Executes the full RAG pipeline:
  * Question -> Query Embedding -> pgvector similarity search -> Relevant Chunks -> Qwen via Groq -> Grounded Answer
  */
-router.post('/ask', requireAuth, async (req, res, next) => {
+router.post('/ask', requireAuth, llmRateLimiter, async (req, res, next) => {
   try {
     const { documentId, question, sessionId } = req.body;
     const userId = req.user?.id || 'user-default-1';
 
     if (!documentId || !question) {
       return res.status(400).json({ error: 'Both documentId and question are required.' });
+    }
+    if (typeof question !== 'string' || question.length > MAX_QUESTION_LENGTH) {
+      return res.status(400).json({ error: `Question must be a string of at most ${MAX_QUESTION_LENGTH} characters.` });
     }
 
     // Questions about who built SMARTDOCS AI are answered directly —
@@ -59,6 +65,7 @@ router.post('/ask', requireAuth, async (req, res, next) => {
 
     // 4. Persist conversation
     const activeSessionId = sessionId || `sess-${Date.now()}`;
+    const localStoreKey = `${userId}:${activeSessionId}`;
 
     if (isSupabaseConfigured && supabaseAdmin) {
       try {
@@ -80,8 +87,10 @@ router.post('/ask', requireAuth, async (req, res, next) => {
         console.warn('[ChatRouter] Could not persist message to Supabase:', dbErr.message);
       }
     } else {
-      // Local session storage
-      const existing = localChatMessages.get(activeSessionId) || [];
+      // Local session storage, keyed per-user so one local session id can't
+      // read another local user's messages (see the /messages/:sessionId
+      // handler below).
+      const existing = localChatMessages.get(localStoreKey) || [];
       existing.push(
         {
           id: 'msg-' + Date.now(),
@@ -97,7 +106,7 @@ router.post('/ask', requireAuth, async (req, res, next) => {
           createdAt: new Date().toISOString()
         }
       );
-      localChatMessages.set(activeSessionId, existing);
+      localChatMessages.set(localStoreKey, existing);
     }
 
     // 5. Return grounded response
@@ -120,8 +129,35 @@ router.post('/ask', requireAuth, async (req, res, next) => {
 router.get('/messages/:sessionId', requireAuth, async (req, res, next) => {
   try {
     const { sessionId } = req.params;
+    const userId = req.user?.id || 'user-default-1';
+
+    // chat_sessions.id is a uuid column; a malformed/non-uuid id (like the
+    // sess-<timestamp> ids /ask currently generates) can never match a row,
+    // so treat it the same as "not found" instead of letting the Postgres
+    // type error fall through to a 500.
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId);
 
     if (isSupabaseConfigured && supabaseAdmin) {
+      if (!isUuid) {
+        return res.status(404).json({ error: 'Chat session not found' });
+      }
+
+      // Session ids are not secret (they're timestamp-derived), so the
+      // session must be proven to belong to this user before any of its
+      // messages are returned — otherwise any authenticated user could
+      // enumerate ids and read other users' conversations.
+      const { data: session, error: sessionError } = await supabaseAdmin
+        .from('chat_sessions')
+        .select('id')
+        .eq('id', sessionId)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (sessionError) throw sessionError;
+      if (!session) {
+        return res.status(404).json({ error: 'Chat session not found' });
+      }
+
       const { data, error } = await supabaseAdmin
         .from('chat_messages')
         .select('*')
@@ -132,7 +168,7 @@ router.get('/messages/:sessionId', requireAuth, async (req, res, next) => {
       return res.json(data || []);
     }
 
-    const messages = localChatMessages.get(sessionId) || [];
+    const messages = localChatMessages.get(`${userId}:${sessionId}`) || [];
     res.json(messages);
   } catch (err) {
     next(err);

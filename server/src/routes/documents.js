@@ -5,6 +5,11 @@ import { requireAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 
+const ALLOWED_MIME_TYPES = new Set([
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+]);
+
 // Configure Multer for in-memory buffer storage (max 20MB, per Qwen's limit)
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -13,7 +18,13 @@ const upload = multer({
   },
   fileFilter: (req, file, cb) => {
     const ext = file.originalname.split('.').pop().toLowerCase();
-    if (ext === 'pdf' || ext === 'docx') {
+    const extOk = ext === 'pdf' || ext === 'docx';
+    // The extension alone is trivially spoofable (rename a .exe to .pdf).
+    // The browser-reported MIME type is also client-controlled but cheap
+    // to check here; the real check is the magic-byte sniff below, once
+    // the buffer is actually available.
+    const mimeOk = ALLOWED_MIME_TYPES.has(file.mimetype);
+    if (extOk && mimeOk) {
       cb(null, true);
     } else {
       const err = new Error('Invalid file format. Only PDF and DOCX files are allowed.');
@@ -23,6 +34,20 @@ const upload = multer({
   }
 });
 
+// Verifies the file's actual content matches its claimed type, independent
+// of the (spoofable) extension and browser-supplied MIME type.
+const MAGIC_BYTES = {
+  pdf: Buffer.from('%PDF-'),
+  // .docx is a zip archive (PK\x03\x04 local file header signature).
+  docx: Buffer.from([0x50, 0x4b, 0x03, 0x04])
+};
+
+function matchesMagicBytes(buffer, ext) {
+  const signature = MAGIC_BYTES[ext];
+  if (!signature) return false;
+  return buffer.length >= signature.length && buffer.subarray(0, signature.length).equals(signature);
+}
+
 /**
  * POST /api/documents/upload
  * Uploads, parses, and chunks a document.
@@ -31,6 +56,11 @@ router.post('/upload', requireAuth, upload.single('file'), async (req, res, next
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded. Please provide a PDF or DOCX file.' });
+    }
+
+    const ext = req.file.originalname.split('.').pop().toLowerCase();
+    if (!matchesMagicBytes(req.file.buffer, ext)) {
+      return res.status(400).json({ error: 'File content does not match its extension.' });
     }
 
     const userId = req.user?.id || 'user-default-1';

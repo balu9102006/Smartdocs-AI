@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../config/supabase.js';
+import { config } from '../config/index.js';
 
 export const requireAuth = async (req, res, next) => {
   try {
@@ -23,7 +24,15 @@ export const requireAuth = async (req, res, next) => {
       return next();
     }
 
-    // Local / Dev fallback mode
+    // Local / Dev fallback mode. Server startup already refuses to run this
+    // path in production (see server.js), but this check stays as a second
+    // independent guard — trusting a client-supplied user id header with no
+    // real auth must never be reachable outside local development.
+    if (config.nodeEnv === 'production') {
+      console.error('[Auth] Refusing unauthenticated dev fallback in production.');
+      return res.status(500).json({ error: 'Server misconfiguration: authentication unavailable' });
+    }
+
     const devUserId = req.headers['x-user-id'] || 'user-default-1';
     req.user = {
       id: devUserId,

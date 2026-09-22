@@ -1,14 +1,18 @@
 import express from 'express';
 import { analysisService } from '../services/analysisService.js';
 import { requireAuth } from '../middleware/auth.js';
+import { llmRateLimiter } from '../middleware/rateLimit.js';
 
 const router = express.Router();
+
+// Every route below triggers a paid LLM call.
+router.use(requireAuth, llmRateLimiter);
 
 /**
  * POST /api/analysis/summary
  * Generates an executive summary for a document.
  */
-router.post('/summary', requireAuth, async (req, res, next) => {
+router.post('/summary', async (req, res, next) => {
   try {
     const { documentId } = req.body;
     const userId = req.user?.id || 'user-default-1';
@@ -28,7 +32,7 @@ router.post('/summary', requireAuth, async (req, res, next) => {
  * POST /api/analysis/keypoints
  * Extracts bulleted key points and concepts.
  */
-router.post('/keypoints', requireAuth, async (req, res, next) => {
+router.post('/keypoints', async (req, res, next) => {
   try {
     const { documentId } = req.body;
     const userId = req.user?.id || 'user-default-1';
@@ -48,7 +52,7 @@ router.post('/keypoints', requireAuth, async (req, res, next) => {
  * POST /api/analysis/quiz
  * Generates interactive revision MCQs.
  */
-router.post('/quiz', requireAuth, async (req, res, next) => {
+router.post('/quiz', async (req, res, next) => {
   try {
     const { documentId, count } = req.body;
     const userId = req.user?.id || 'user-default-1';

@@ -1,10 +1,19 @@
 import { createClient } from '@supabase/supabase-js';
 import { config } from './index.js';
 
+// A placeholder value copy-pasted from .env.example (or left unset) must
+// never be mistaken for a real configuration — that's exactly the gap that
+// let auth silently fall back to trusting a client-supplied user id header.
+const looksLikePlaceholder = (value) => !value || /your[-_]/i.test(value);
+
 export const isSupabaseConfigured = Boolean(
   config.supabase.url &&
   config.supabase.anonKey &&
-  config.supabase.url !== 'your_supabase_project_url'
+  config.supabase.serviceRoleKey &&
+  config.supabase.url.startsWith('https://') &&
+  !looksLikePlaceholder(config.supabase.url) &&
+  !looksLikePlaceholder(config.supabase.anonKey) &&
+  !looksLikePlaceholder(config.supabase.serviceRoleKey)
 );
 
 // Regular client (respects RLS)

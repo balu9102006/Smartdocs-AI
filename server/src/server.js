@@ -2,11 +2,28 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { config } from './config/index.js';
+import { isSupabaseConfigured } from './config/supabase.js';
 import healthRouter from './routes/health.js';
 import documentsRouter from './routes/documents.js';
 import chatRouter from './routes/chat.js';
 import analysisRouter from './routes/analysis.js';
 import { requireAuth } from './middleware/auth.js';
+
+// A missing/misconfigured Supabase env var silently drops auth into a dev
+// fallback mode that trusts a client-supplied x-user-id header — an
+// unauthenticated, impersonatable multi-tenant data store. That must never
+// happen in production, so refuse to boot rather than serve traffic that way.
+if (config.nodeEnv === 'production' && !isSupabaseConfigured) {
+  console.error('=============================================');
+  console.error(' FATAL: Supabase is not configured.');
+  console.error(' Refusing to start in production without real');
+  console.error(' auth — this would otherwise trust a client-');
+  console.error(' supplied x-user-id header with no verification.');
+  console.error(' Set SUPABASE_URL, SUPABASE_ANON_KEY and');
+  console.error(' SUPABASE_SERVICE_ROLE_KEY and restart.');
+  console.error('=============================================');
+  process.exit(1);
+}
 
 const app = express();
 
@@ -14,7 +31,12 @@ const app = express();
 // Security headers: blocks clickjacking (frame-ancestors), disables
 // X-Powered-By tech-stack disclosure, sets standard hardening headers.
 // This API serves only JSON, so CSP's default-src restrictions are safe here.
-app.use(helmet());
+// Helmet's default Cross-Origin-Resource-Policy is "same-origin", which
+// blocks the frontend (a different origin, e.g. Vercel) from reading this
+// API's responses even with CORS configured correctly below.
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' }
+}));
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
@@ -71,9 +93,18 @@ app.use((err, req, res, next) => {
   const status = err.status || (err.name === 'MulterError' ? 400 : 500);
   // Malformed request bodies leak raw parser internals in err.message
   // (e.g. exact byte position) — return a generic message instead.
-  const message = err.type === 'entity.parse.failed'
-    ? 'Malformed request body'
-    : (err.message || 'Internal Server Error');
+  // Errors we threw deliberately (err.status set, e.g. "Document not
+  // found") carry a message that's already safe to show. Anything that
+  // fell through to an unhandled 500 — a raw Postgres/Supabase error,
+  // a stack trace message, etc. — must not reach the client verbatim.
+  let message;
+  if (err.type === 'entity.parse.failed') {
+    message = 'Malformed request body';
+  } else if (err.status) {
+    message = err.message || 'Request failed';
+  } else {
+    message = 'Internal server error';
+  }
   res.status(status).json({ error: message });
 });
 

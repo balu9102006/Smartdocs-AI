@@ -42,7 +42,7 @@ SMARTDOCS AI is a full-stack, cloud-native web application built with **React + 
 6. **Executive Document Summaries**: Automated synthesis of document objectives, key themes, and conclusions with one-click clipboard copying.
 7. **Key Points & Concepts Extractor**: Numbered core takeaways and definitions.
 8. **Interactive Revision Quizzes & MCQs**: Practice questions with multiple-choice options, instant visual feedback, and explanations.
-9. **Multi-Tenant Security**: Supabase Row-Level Security (RLS) on all database tables and storage policies.
+9. **Multi-Tenant Security**: Every table has Supabase Row-Level Security (RLS) policies defined in `schema.sql`. The backend, however, talks to Postgres through the service-role client (needed for background indexing), which bypasses RLS by definition — actual tenant isolation is enforced in application code via explicit `user_id` filters on every query, not by the database policies. Treat the RLS policies as a second line of defense (e.g. for any future client that queries Postgres directly), not the mechanism actually protecting the API today.
 10. **Zero-Setup Offline Sandbox**: Built-in mock data and local vector fallbacks so the application runs immediately without requiring API keys on day one.
 
 ---
