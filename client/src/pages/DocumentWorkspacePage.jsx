@@ -58,6 +58,7 @@ export default function DocumentWorkspacePage() {
   const [activeSourcePreview, setActiveSourcePreview] = useState(null);
   const [isOpeningFile, setIsOpeningFile] = useState(false);
   const [fileOpenError, setFileOpenError] = useState('');
+  const [blockedFileUrl, setBlockedFileUrl] = useState('');
 
   // Phase 12 analysis loading states
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
@@ -253,6 +254,7 @@ export default function DocumentWorkspacePage() {
   const handleOpenOriginalFile = async () => {
     if (!doc || isOpeningFile) return;
     setFileOpenError('');
+    setBlockedFileUrl('');
     setIsOpeningFile(true);
 
     // Open the tab synchronously, inside the click handler — opening it
@@ -262,11 +264,21 @@ export default function DocumentWorkspacePage() {
 
     try {
       const url = await api.getFileUrl(doc.id);
-      if (url && newTab) {
-        newTab.location.href = url;
-      } else {
+      if (!url) {
+        // The backend genuinely has no file for this document.
         newTab?.close();
         setFileOpenError('The original file is not available for this document.');
+        return;
+      }
+      if (newTab) {
+        newTab.location.href = url;
+      } else {
+        // The URL is valid — the browser's popup blocker is what stopped
+        // this, not a missing file. Offer a direct link instead: a real
+        // click on it counts as a fresh user gesture, so it won't be
+        // blocked the way the automatic window.open() above was.
+        setBlockedFileUrl(url);
+        setFileOpenError('Your browser blocked the popup. Use the link below to open the file.');
       }
     } finally {
       setIsOpeningFile(false);
@@ -594,6 +606,16 @@ export default function DocumentWorkspacePage() {
                 </button>
                 {fileOpenError && (
                   <p className="mt-2 text-[11px] text-red-700">{fileOpenError}</p>
+                )}
+                {blockedFileUrl && (
+                  <a
+                    href={blockedFileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1.5 inline-block text-[11px] text-brass-dim underline hover:text-brass"
+                  >
+                    Open {doc.fileName}
+                  </a>
                 )}
               </div>
 
