@@ -1,7 +1,7 @@
 # SMARTDOCS AI
 > **An AI-Powered Intelligent Document Question Answering and Analysis System**
 
-SMARTDOCS AI is a full-stack, cloud-native web application built with **React + Vite**, **Node.js + Express**, **Supabase** (PostgreSQL, pgvector, Storage, Auth), and **Groq (Qwen LLM)**. It allows users to upload PDF and DOCX documents and interact with them through context-grounded AI conversations, executive summaries, key concept breakdowns, and practice quizzes.
+SMARTDOCS AI is a full-stack, cloud-native web application built with **React + Vite**, **Node.js + Express**, **Supabase** (PostgreSQL, pgvector, Storage, Auth), and **Groq (Qwen LLM)**. It allows users to upload PDF, DOCX, and PPTX documents and interact with them through context-grounded AI conversations, executive summaries, key concept breakdowns, and practice quizzes.
 
 ---
 
@@ -34,7 +34,7 @@ SMARTDOCS AI is a full-stack, cloud-native web application built with **React + 
 
 ## ✨ Features Implemented
 
-1. **Multi-Format Ingestion**: Upload `.pdf` and `.docx` files with client & server-side validation (max 20MB).
+1. **Multi-Format Ingestion**: Upload `.pdf`, `.docx`, and `.pptx` files with client & server-side validation (max 20MB).
 2. **Text Chunking Engine**: Sliding-window chunker with overlapping boundaries (`chunkSize: 800`, `chunkOverlap: 150`) preserving natural paragraph and sentence structure.
 3. **Dedicated Embedding Pipeline**: Decoupled vectorization generating 1536-dimensional normalized embeddings for Supabase pgvector.
 4. **Vector Similarity Search (RAG)**: Cosine distance similarity search via `match_document_chunks` RPC, strictly scoped by `user_id` and `document_id`.
@@ -132,7 +132,7 @@ To set up the cloud database:
 | :--- | :--- | :--- |
 | `GET` | `/api/health` | Service health status and configured integrations |
 | `GET` | `/api/auth/me` | Validates JWT token and returns user profile |
-| `POST` | `/api/documents/upload` | Uploads, parses (PDF/DOCX), and chunks a document |
+| `POST` | `/api/documents/upload` | Uploads, parses (PDF/DOCX/PPTX), and chunks a document |
 | `GET` | `/api/documents` | Lists all documents for the authenticated user |
 | `GET` | `/api/documents/:id` | Retrieves document metadata and indexed chunks |
 | `DELETE` | `/api/documents/:id` | Deletes document, chunks, and storage binary |

@@ -7,8 +7,10 @@ const router = express.Router();
 
 const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 ]);
+const ALLOWED_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
 
 // Configure Multer for in-memory buffer storage (max 20MB, per Qwen's limit)
 const upload = multer({
@@ -18,7 +20,7 @@ const upload = multer({
   },
   fileFilter: (req, file, cb) => {
     const ext = file.originalname.split('.').pop().toLowerCase();
-    const extOk = ext === 'pdf' || ext === 'docx';
+    const extOk = ALLOWED_EXTENSIONS.has(ext);
     // The extension alone is trivially spoofable (rename a .exe to .pdf).
     // The browser-reported MIME type is also client-controlled but cheap
     // to check here; the real check is the magic-byte sniff below, once
@@ -27,7 +29,7 @@ const upload = multer({
     if (extOk && mimeOk) {
       cb(null, true);
     } else {
-      const err = new Error('Invalid file format. Only PDF and DOCX files are allowed.');
+      const err = new Error('Invalid file format. Only PDF, DOCX, and PPTX files are allowed.');
       err.status = 400;
       cb(err);
     }
@@ -38,8 +40,12 @@ const upload = multer({
 // of the (spoofable) extension and browser-supplied MIME type.
 const MAGIC_BYTES = {
   pdf: Buffer.from('%PDF-'),
-  // .docx is a zip archive (PK\x03\x04 local file header signature).
-  docx: Buffer.from([0x50, 0x4b, 0x03, 0x04])
+  // .docx and .pptx are both zip archives (PK\x03\x04 local file header
+  // signature) — this only confirms "valid zip", not the specific OOXML
+  // document type inside, but matches the level of checking already used
+  // for .docx.
+  docx: Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+  pptx: Buffer.from([0x50, 0x4b, 0x03, 0x04])
 };
 
 function matchesMagicBytes(buffer, ext) {
@@ -55,7 +61,7 @@ function matchesMagicBytes(buffer, ext) {
 router.post('/upload', requireAuth, upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded. Please provide a PDF or DOCX file.' });
+      return res.status(400).json({ error: 'No file uploaded. Please provide a PDF, DOCX, or PPTX file.' });
     }
 
     const ext = req.file.originalname.split('.').pop().toLowerCase();

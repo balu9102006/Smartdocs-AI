@@ -1,4 +1,5 @@
 import mammoth from 'mammoth';
+import JSZip from 'jszip';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createCanvas } from '@napi-rs/canvas';
 import { ocrService } from './ocrService.js';
@@ -136,6 +137,76 @@ export async function extractTextFromDocx(buffer) {
 }
 
 /**
+ * Extracts raw text from a PPTX buffer. A .pptx is a zip of per-slide XML
+ * files (ppt/slides/slide1.xml, slide2.xml, ...) — each slide's visible
+ * text lives in <a:t> runs inside it, regardless of shape type (text box,
+ * table, title placeholder, etc.), so no separate layout handling is
+ * needed the way PDF/DOCX require.
+ *
+ * Unlike PDF page numbers (which needed real per-page tracking to avoid
+ * estimation drift) and DOCX page numbers (which can't be known at all),
+ * a slide's number IS its real, exact page number — no estimation needed.
+ *
+ * Known limitation: this only reads text runs, not text baked into images
+ * pasted onto a slide (e.g. a screenshot) — that would need the same OCR
+ * path used for scanned PDF pages, which isn't wired up for PPTX.
+ */
+export async function extractTextFromPptx(buffer) {
+  try {
+    const zip = await JSZip.loadAsync(buffer);
+    const slideFiles = Object.keys(zip.files)
+      .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+      .sort((a, b) => {
+        const numA = parseInt(a.match(/slide(\d+)\.xml/)[1], 10);
+        const numB = parseInt(b.match(/slide(\d+)\.xml/)[1], 10);
+        return numA - numB;
+      });
+
+    if (slideFiles.length === 0) {
+      throw new Error('No slides found in this .pptx file.');
+    }
+
+    let rawText = '';
+    const pageMap = [];
+
+    for (let i = 0; i < slideFiles.length; i++) {
+      const xml = await zip.files[slideFiles[i]].async('string');
+      const cleanedSlideText = cleanText(extractSlideTextRuns(xml));
+      const charStart = rawText.length;
+      rawText += cleanedSlideText + '\n';
+      pageMap.push({ page: i + 1, charStart, charEnd: rawText.length });
+    }
+
+    return {
+      text: rawText,
+      totalPages: slideFiles.length,
+      pageMap
+    };
+  } catch (err) {
+    console.error('PPTX parsing error:', err);
+    throw new Error(`Failed to parse PPTX document: ${err.message}`);
+  }
+}
+
+/**
+ * Pulls every DrawingML text run (<a:t>...</a:t>) out of a slide's XML, in
+ * document order, and joins them with spaces.
+ */
+function extractSlideTextRuns(xml) {
+  const matches = [...xml.matchAll(/<a:t>([^<]*)<\/a:t>/g)];
+  return matches.map((m) => decodeXmlEntities(m[1])).join(' ');
+}
+
+function decodeXmlEntities(str) {
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'");
+}
+
+/**
  * Unified document parser dispatcher.
  */
 export async function parseDocument(buffer, fileType) {
@@ -144,8 +215,10 @@ export async function parseDocument(buffer, fileType) {
     return await extractTextFromPdf(buffer);
   } else if (type === 'docx') {
     return await extractTextFromDocx(buffer);
+  } else if (type === 'pptx') {
+    return await extractTextFromPptx(buffer);
   } else {
-    throw new Error(`Unsupported file type: ${fileType}. Only PDF and DOCX are allowed.`);
+    throw new Error(`Unsupported file type: ${fileType}. Only PDF, DOCX, and PPTX are allowed.`);
   }
 }
 

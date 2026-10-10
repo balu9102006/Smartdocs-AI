@@ -123,7 +123,7 @@ Fly's free allowance (`shared-cpu-1x`, 256MB) covers a single always-on machine 
 
 1. Open your production frontend URL.
 2. Register a new user account (verifies Supabase Auth).
-3. Upload a sample PDF or DOCX file (verifies Multer, Supabase Storage, and parser).
+3. Upload a sample PDF, DOCX, or PPTX file (verifies Multer, Supabase Storage, and parser).
 4. Send a question in the chat (verifies pgvector similarity retrieval and Qwen generation via Groq).
 5. Open the **Summary**, **Key Points**, and **Quiz** tabs to verify document intelligence features.
 

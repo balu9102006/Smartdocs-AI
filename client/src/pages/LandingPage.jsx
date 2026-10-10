@@ -32,7 +32,7 @@ const features = [
   },
   {
     Icon: Layers,
-    title: 'PDF and DOCX Parsing',
+    title: 'PDF, DOCX, and PPTX Parsing',
     desc: 'Text, structure and page numbers are extracted from both formats, then split on natural paragraph boundaries.'
   },
   {
@@ -85,7 +85,7 @@ export default function LandingPage() {
         </h1>
 
         <p className="mt-6 text-lg text-parchment-dim max-w-2xl leading-relaxed">
-          SmartDocs AI reads your PDFs and DOCX files, indexes them into vector memory, and answers
+          SmartDocs AI reads your PDFs, DOCX, and PPTX files, indexes them into vector memory, and answers
           in plain language — with an exact leaf citation behind every claim, so nothing it tells you
           is unverifiable.
         </p>

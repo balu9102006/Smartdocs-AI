@@ -15,11 +15,11 @@ export default function UploadModal({ isOpen, onClose, onUploadSuccess }) {
     setError('');
     if (!selectedFile) return false;
 
-    const validExtensions = ['pdf', 'docx'];
+    const validExtensions = ['pdf', 'docx', 'pptx'];
     const ext = selectedFile.name.split('.').pop().toLowerCase();
 
     if (!validExtensions.includes(ext)) {
-      setError('Invalid file format. Only PDF and DOCX files are supported.');
+      setError('Invalid file format. Only PDF, DOCX, and PPTX files are supported.');
       return false;
     }
 
@@ -108,7 +108,7 @@ export default function UploadModal({ isOpen, onClose, onUploadSuccess }) {
         <div className="flex items-center justify-between pb-4 border-b border-ink/15">
           <div>
             <h3 className="font-display text-lg font-semibold text-ink-text">Add to the stacks</h3>
-            <p className="text-xs text-ink-text/60">PDF and DOCX formats supported</p>
+            <p className="text-xs text-ink-text/60">PDF, DOCX, and PPTX formats supported</p>
           </div>
           {!uploading && (
             <button
@@ -138,7 +138,7 @@ export default function UploadModal({ isOpen, onClose, onUploadSuccess }) {
               <input
                 ref={inputRef}
                 type="file"
-                accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                accept=".pdf,.docx,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 onChange={handleChange}
                 className="hidden"
               />
@@ -151,7 +151,7 @@ export default function UploadModal({ isOpen, onClose, onUploadSuccess }) {
                 Click to browse or drag and drop your file here
               </p>
               <p className="text-xs text-ink-text/60 mt-1">
-                Supported formats: <span className="text-brass-dim font-semibold">PDF, DOCX</span> (Max 20MB)
+                Supported formats: <span className="text-brass-dim font-semibold">PDF, DOCX, PPTX</span> (Max 20MB)
               </p>
             </div>
           ) : (

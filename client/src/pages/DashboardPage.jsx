@@ -94,7 +94,7 @@ export default function DashboardPage() {
             The Stacks
           </h1>
           <p className="text-sm text-parchment-dim mt-1.5 max-w-xl">
-            Every PDF and DOCX you have shelved, parsed into leaves and indexed for reference.
+            Every PDF, DOCX, and PPTX you have shelved, parsed into leaves and indexed for reference.
           </p>
         </div>
 
@@ -110,7 +110,7 @@ export default function DashboardPage() {
       {/* Ledger summary line */}
       <dl className="my-8 grid grid-cols-2 md:grid-cols-4 gap-px bg-ink-line border border-ink-line rounded-md overflow-hidden">
         {[
-          { label: 'Volumes', value: totalDocs, note: 'PDF & DOCX', Icon: FileText },
+          { label: 'Volumes', value: totalDocs, note: 'PDF, DOCX, PPTX', Icon: FileText },
           { label: 'Catalogued', value: readyDocs, note: 'ready to consult', Icon: CheckCircle2 },
           { label: 'Leaves parsed', value: totalPages, note: 'pages cleaned', Icon: Layers },
           { label: 'Indexed chunks', value: totalChunksEst, note: 'as dense vectors', Icon: Database }
@@ -207,7 +207,7 @@ export default function DashboardPage() {
           <p className="text-sm text-parchment-dim mt-1.5 max-w-sm mx-auto">
             {searchQuery
               ? 'No volumes match that search. Try clearing the filters.'
-              : 'Add a PDF or DOCX and it will be parsed, indexed and ready to consult.'}
+              : 'Add a PDF, DOCX, or PPTX and it will be parsed, indexed and ready to consult.'}
           </p>
           <button
             onClick={() => setIsUploadOpen(true)}
