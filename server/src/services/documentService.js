@@ -267,11 +267,13 @@ export const documentService = {
 
     if (error || !doc || !doc.storage_path) return null;
 
+    // No `download` option here: that forces a Content-Disposition:
+    // attachment response, which makes the browser save the file instead
+    // of opening it inline in the new tab (PDFs render fine in-browser
+    // without it).
     const { data, error: signError } = await supabaseAdmin.storage
       .from('documents')
-      .createSignedUrl(doc.storage_path, 300, {
-        download: doc.file_name
-      });
+      .createSignedUrl(doc.storage_path, 300);
 
     if (signError) {
       console.error('[DocumentService] createSignedUrl error:', signError.message);
