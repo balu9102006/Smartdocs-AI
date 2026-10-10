@@ -183,6 +183,21 @@ export const api = {
     return result;
   },
 
+  // Transcribes a recorded voice question (Blob from MediaRecorder) into
+  // text via the backend's Groq Whisper endpoint. Returns only text — the
+  // caller fills the chat input with it so the user can review before
+  // sending, same as a typed question.
+  async transcribeAudio(audioBlob) {
+    const formData = new FormData();
+    formData.append('audio', audioBlob, 'voice-question.webm');
+    const result = await apiRequestJson('/chat/transcribe', {
+      method: 'POST',
+      headers: await getAuthHeaders(),
+      body: formData
+    });
+    return result.text;
+  },
+
   // Document Analysis Features (Phase 12)
   async generateSummary(documentId) {
     return apiRequestJson('/analysis/summary', {

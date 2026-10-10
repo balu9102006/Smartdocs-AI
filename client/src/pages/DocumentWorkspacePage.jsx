@@ -18,7 +18,9 @@ import {
   Loader2,
   RefreshCw,
   AlertTriangle,
-  Globe
+  Globe,
+  Mic,
+  Square
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -59,6 +61,11 @@ export default function DocumentWorkspacePage() {
   const [isOpeningFile, setIsOpeningFile] = useState(false);
   const [fileOpenError, setFileOpenError] = useState('');
   const [fileDownloadUrl, setFileDownloadUrl] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [voiceError, setVoiceError] = useState('');
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
 
   // Phase 12 analysis loading states
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
@@ -177,6 +184,69 @@ export default function DocumentWorkspacePage() {
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsAiThinking(false);
+    }
+  };
+
+  const handleMicClick = async () => {
+    if (isRecording) {
+      mediaRecorderRef.current?.stop();
+      return;
+    }
+    if (isTranscribing) return;
+
+    setVoiceError('');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Let the browser pick its own supported mime type rather than
+      // forcing one — Chrome/Edge default to audio/webm, Safari to
+      // audio/mp4; the backend maps either to the right extension for
+      // Whisper (see voiceService.js).
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = async () => {
+        // Release the mic indicator in the browser tab immediately, before
+        // the (possibly slow) transcription call.
+        stream.getTracks().forEach((track) => track.stop());
+        setIsRecording(false);
+
+        const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        if (audioBlob.size === 0) return;
+
+        setIsTranscribing(true);
+        try {
+          const text = await api.transcribeAudio(audioBlob);
+          if (text) {
+            // Append rather than replace, so a user can speak a follow-up
+            // onto something they'd already typed.
+            setInputQuery((prev) => (prev ? `${prev} ${text}` : text));
+          } else {
+            setVoiceError("Couldn't make out any speech in that recording. Please try again.");
+          }
+        } catch (err) {
+          if (err.status === 401) {
+            signOut();
+            return;
+          }
+          setVoiceError(err.message || 'Voice transcription failed. Please try again.');
+        } finally {
+          setIsTranscribing(false);
+        }
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      setVoiceError(
+        err.name === 'NotAllowedError'
+          ? 'Microphone access was denied. Allow it in your browser\'s site settings to use voice input.'
+          : "Couldn't access the microphone. Please check your device and try again."
+      );
     }
   };
 
@@ -548,22 +618,46 @@ export default function DocumentWorkspacePage() {
               </div>
 
               {/* Chat Input Bar */}
-              <form onSubmit={handleSendMessage} className="p-3 border-t border-ink/15 flex items-center gap-2">
-                <input
-                  type="text"
-                  value={inputQuery}
-                  onChange={(e) => setInputQuery(e.target.value)}
-                  placeholder="Ask a question about this document..."
-                  className="field-paper flex-1 text-sm"
-                />
-                <button
-                  type="submit"
-                  disabled={!inputQuery.trim() || isAiThinking}
-                  className="btn-brass px-4 py-2.5 flex items-center justify-center shrink-0"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
-              </form>
+              <div className="border-t border-ink/15">
+                <form onSubmit={handleSendMessage} className="p-3 flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={inputQuery}
+                    onChange={(e) => setInputQuery(e.target.value)}
+                    placeholder={isRecording ? 'Listening...' : isTranscribing ? 'Transcribing...' : 'Ask a question about this document...'}
+                    className="field-paper flex-1 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleMicClick}
+                    disabled={isTranscribing}
+                    title={isRecording ? 'Stop recording' : 'Ask by voice'}
+                    className={`px-3 py-2.5 flex items-center justify-center shrink-0 rounded-sm transition-colors ${
+                      isRecording
+                        ? 'bg-red-600 text-white animate-pulse'
+                        : 'border border-ink/20 text-ink-text/70 hover:text-ink-text hover:bg-ink/5'
+                    }`}
+                  >
+                    {isTranscribing ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : isRecording ? (
+                      <Square className="w-4 h-4" />
+                    ) : (
+                      <Mic className="w-4 h-4" />
+                    )}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!inputQuery.trim() || isAiThinking}
+                    className="btn-brass px-4 py-2.5 flex items-center justify-center shrink-0"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </form>
+                {voiceError && (
+                  <p className="px-3 pb-2.5 text-[11px] text-red-700">{voiceError}</p>
+                )}
+              </div>
             </div>
 
             {/* Right Context & Source Panel (1 col) */}

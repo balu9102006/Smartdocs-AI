@@ -1,9 +1,11 @@
 import express from 'express';
+import multer from 'multer';
 import { randomUUID } from 'crypto';
 import { ragService } from '../services/ragService.js';
 import { aiService } from '../services/aiService.js';
 import { documentService } from '../services/documentService.js';
 import { isCreatorQuestion, buildCreatorResponse } from '../services/creatorService.js';
+import { transcribeAudio } from '../services/voiceService.js';
 import { requireAuth } from '../middleware/auth.js';
 import { llmRateLimiter } from '../middleware/rateLimit.js';
 import { supabaseAdmin, isSupabaseConfigured } from '../config/supabase.js';
@@ -13,6 +15,35 @@ const MAX_QUESTION_LENGTH = 2000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const router = express.Router();
+
+// Voice questions should be short — this is a generous cap, not an
+// expected size (10MB is several minutes of compressed speech).
+const audioUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }
+});
+
+/**
+ * POST /api/chat/transcribe
+ * Transcribes a recorded voice question into text via Groq Whisper, for
+ * the chat input's microphone button. Returns text only — it does NOT ask
+ * a question; the client fills its input field with the result and the
+ * user still reviews/sends it via the normal /ask flow.
+ */
+router.post('/transcribe', requireAuth, llmRateLimiter, audioUpload.single('audio'), async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No audio file uploaded.' });
+    }
+    const text = await transcribeAudio(req.file.buffer, req.file.mimetype);
+    if (text === null) {
+      return res.status(503).json({ error: 'Voice transcription is not available right now.' });
+    }
+    res.json({ text });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // In-memory chat storage for local sandbox mode
 const localChatSessions = new Map();
