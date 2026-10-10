@@ -16,6 +16,9 @@ export const config = {
   embeddings: {
     apiKey: process.env.EMBEDDING_API_KEY || '',
   },
+  auth: {
+    allowDevAuthFallback: process.env.ALLOW_DEV_AUTH_FALLBACK === 'true',
+  },
   rag: {
     // Single source of truth for the retrieval similarity cutoff. Previously
     // this value was duplicated (and drifted) across schema.sql's RPC

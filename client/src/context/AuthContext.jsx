@@ -4,6 +4,33 @@ import { supabase, isSupabaseConfigured } from '../services/supabase';
 const AuthContext = createContext(null);
 
 const LOCAL_USER_KEY = 'smartdocs_local_user';
+const LOCAL_AUTH_ENABLED = import.meta.env.VITE_ALLOW_LOCAL_AUTH === 'true';
+
+const normalizeAuthError = (err) => {
+  const message = err?.message || '';
+
+  if (/Failed to fetch|fetch failed|NetworkError/i.test(message)) {
+    return new Error('Authentication service is unavailable. Check your Supabase URL, network access, and whether email/password sign-in is enabled in the project settings.');
+  }
+
+  if (/invalid login credentials|Invalid login credentials|Email not confirmed|User not found|invalid_credentials/i.test(message)) {
+    return new Error('Incorrect email or password. Please verify your credentials and try again.');
+  }
+
+  if (/duplicate|already registered|already exists|User already registered/i.test(message)) {
+    return new Error('An account with this email already exists. Please log in instead.');
+  }
+
+  if (/auth.*disabled|not enabled|Provider.*disabled|email.*not.*enabled/i.test(message)) {
+    return new Error('Email authentication is not enabled for this Supabase project. Enable Email/Password auth in your Supabase dashboard.');
+  }
+
+  if (!message) {
+    return new Error('Authentication failed. Please try again.');
+  }
+
+  return err;
+};
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -30,7 +57,14 @@ export function AuthProvider({ children }) {
 
       return () => subscription.unsubscribe();
     } else {
-      // Local fallback mode
+      if (!LOCAL_AUTH_ENABLED) {
+        setUser(null);
+        localStorage.removeItem(LOCAL_USER_KEY);
+        setLoading(false);
+        return;
+      }
+
+      // Optional local fallback mode only when explicitly enabled.
       const savedUser = localStorage.getItem(LOCAL_USER_KEY);
       if (savedUser) {
         try {
@@ -39,7 +73,6 @@ export function AuthProvider({ children }) {
           localStorage.removeItem(LOCAL_USER_KEY);
         }
       } else {
-        // Default guest user
         const defaultUser = {
           id: 'user-default-1',
           name: 'Alex Developer',
@@ -55,15 +88,23 @@ export function AuthProvider({ children }) {
   // Sign in with Email & Password
   const signIn = async (email, password) => {
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
-      if (error) throw error;
-      return data;
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        });
+        if (error) throw error;
+        return data;
+      } catch (err) {
+        throw normalizeAuthError(err);
+      }
     }
 
-    // Fallback sign in
+    if (!LOCAL_AUTH_ENABLED) {
+      const message = 'Authentication is not configured. Set your Supabase environment variables or enable VITE_ALLOW_LOCAL_AUTH for the offline sandbox.';
+      throw new Error(message);
+    }
+
     const dummyUser = {
       id: 'user-' + Date.now(),
       name: email.split('@')[0],
@@ -77,18 +118,26 @@ export function AuthProvider({ children }) {
   // Sign up with Email & Password
   const signUp = async (email, password, name) => {
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { name }
-        }
-      });
-      if (error) throw error;
-      return data;
+      try {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { name }
+          }
+        });
+        if (error) throw error;
+        return data;
+      } catch (err) {
+        throw normalizeAuthError(err);
+      }
     }
 
-    // Fallback sign up
+    if (!LOCAL_AUTH_ENABLED) {
+      const message = 'Authentication is not configured. Set your Supabase environment variables or enable VITE_ALLOW_LOCAL_AUTH for the offline sandbox.';
+      throw new Error(message);
+    }
+
     const dummyUser = {
       id: 'user-' + Date.now(),
       name: name || email.split('@')[0],

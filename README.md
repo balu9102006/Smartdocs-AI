@@ -93,6 +93,7 @@ When connecting your live cloud services, create `.env` files in both directorie
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 VITE_API_URL=http://localhost:5000/api
+VITE_ALLOW_LOCAL_AUTH=false
 ```
 
 ### Server (`server/.env`)
@@ -105,6 +106,7 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 GROQ_API_KEY=your_groq_api_key
 GROQ_MODEL=qwen/qwen3.8-27b
 EMBEDDING_API_KEY=your_openai_or_embedding_key
+ALLOW_DEV_AUTH_FALLBACK=false
 ```
 
 ---

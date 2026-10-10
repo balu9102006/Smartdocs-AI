@@ -24,13 +24,12 @@ export const requireAuth = async (req, res, next) => {
       return next();
     }
 
-    // Local / Dev fallback mode. Server startup already refuses to run this
-    // path in production (see server.js), but this check stays as a second
-    // independent guard — trusting a client-supplied user id header with no
-    // real auth must never be reachable outside local development.
-    if (config.nodeEnv === 'production') {
-      console.error('[Auth] Refusing unauthenticated dev fallback in production.');
-      return res.status(500).json({ error: 'Server misconfiguration: authentication unavailable' });
+    // Local / dev fallback mode is only allowed when explicitly enabled.
+    // Without an explicit opt-in, fail closed instead of accepting a
+    // client-supplied user id as a valid authenticated session.
+    if (!config.auth.allowDevAuthFallback) {
+      console.error('[Auth] Refusing unauthenticated dev fallback: auth is not configured.');
+      return res.status(503).json({ error: 'Authentication is not configured. Set your Supabase environment variables or enable ALLOW_DEV_AUTH_FALLBACK for local testing.' });
     }
 
     const devUserId = req.headers['x-user-id'] || 'user-default-1';
